@@ -19,6 +19,7 @@
     "productName": "HelloWorldElectron",
     "files": [
       "main.js",
+      "preload.js",
       "react-dist/**/*",
       "index.html",
       "package.json"
