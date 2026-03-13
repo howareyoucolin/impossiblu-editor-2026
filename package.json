@@ -1,0 +1,31 @@
+{
+  "name": "electron-local-file-viewer-2026",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal Electron hello world app",
+  "author": "Colin Zhou",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.example.electronlocalfileviewer2026",
+    "productName": "HelloWorldElectron",
+    "files": [
+      "main.js",
+      "index.html",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "zip"
+      ]
+    }
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.12"
+  }
+}
