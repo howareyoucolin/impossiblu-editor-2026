@@ -11,19 +11,27 @@ body {
 }
 
 .setup-screen {
-  min-height: 100vh;
+  height: 100vh;
+  box-sizing: border-box;
   display: grid;
-  place-items: center;
-  padding: 24px;
+  justify-items: center;
+  align-content: start;
+  padding: 40px 24px 24px;
+  overflow: hidden;
 }
 
 .setup-card {
   width: min(520px, 100%);
   padding: 32px;
-  border-radius: 20px;
-  background: #f7f3ea;
-  box-shadow: 0 18px 48px rgba(29, 29, 29, 0.12);
   text-align: center;
+}
+
+.setup-logo {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 24px;
+  margin-bottom: 18px;
 }
 
 .setup-card h1 {
