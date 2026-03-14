@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef } from 'react'
 
 function formatTabLabel(fileName) {
     return fileName.length > 15 ? `${fileName.slice(0, 15)}...` : fileName
@@ -15,8 +15,11 @@ export function ContentPanel({
     editorStates,
     onChangeContent,
 }) {
+    const lineNumbersRef = useRef(null)
     const isLocked = activeState?.isLocked ?? true
     const content = activeState?.content || ''
+    const lineCount = content.split('\n').length
+    const lineNumbers = Array.from({ length: lineCount }, (_value, index) => index + 1)
 
     return (
         <section className="content-panel">
@@ -70,13 +73,28 @@ export function ContentPanel({
                 </div>
             ) : null}
             {activeFile ? (
-                <textarea
-                    className="content-editor"
-                    readOnly={isLocked}
-                    onChange={(event) => onChangeContent(event.target.value)}
-                    spellCheck={false}
-                    value={content}
-                />
+                <div className="editor-shell">
+                    <div className="line-numbers" ref={lineNumbersRef}>
+                        {lineNumbers.map((lineNumber) => (
+                            <div key={lineNumber} className="line-number">
+                                {lineNumber}
+                            </div>
+                        ))}
+                    </div>
+                    <textarea
+                        className="content-editor"
+                        readOnly={isLocked}
+                        onChange={(event) => onChangeContent(event.target.value)}
+                        onScroll={(event) => {
+                            if (lineNumbersRef.current) {
+                                lineNumbersRef.current.scrollTop =
+                                    event.target.scrollTop
+                            }
+                        }}
+                        spellCheck={false}
+                        value={content}
+                    />
+                </div>
             ) : (
                 <p className="message">No files found in local-data.</p>
             )}

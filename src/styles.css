@@ -81,6 +81,22 @@ body {
   white-space: nowrap;
 }
 
+.file-rename-input {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font: inherit;
+  color: #1d1d1d;
+  background: #f7f3ea;
+  min-width: 0;
+  outline: none;
+}
+
+.file-row.is-active .file-rename-input {
+  color: #f7f3ea;
+  background: #1d1d1d;
+}
+
 .file-row.is-active .file-button,
 .file-row.is-active .file-delete-button,
 .file-row.is-active .file-lock-button {
@@ -115,7 +131,7 @@ body {
 }
 
 .content-panel {
-  padding: 14px 24px 24px;
+  padding: 4px 24px 24px;
   display: grid;
   grid-template-rows: auto auto 1fr;
   gap: 16px;
@@ -195,12 +211,36 @@ body {
   opacity: 0.45;
 }
 
+.editor-shell {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  border-radius: 14px;
+  background: #f7f3ea;
+  overflow: hidden;
+}
+
+.line-numbers {
+  padding: 18px 10px 18px 14px;
+  background: #ece4d3;
+  color: #8d836f;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  text-align: right;
+  user-select: none;
+  overflow: hidden;
+}
+
+.line-number {
+  min-width: 2ch;
+}
+
 .content-editor {
   margin: 0;
   padding: 18px;
   border: 0;
-  border-radius: 14px;
-  background: #f7f3ea;
+  border-radius: 0;
+  background: transparent;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 0.95rem;
   line-height: 1.5;

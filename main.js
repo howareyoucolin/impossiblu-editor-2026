@@ -1,9 +1,37 @@
 const { app, BrowserWindow, ipcMain, screen } = require('electron')
+const { execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
 const dataDirectory = path.join(__dirname, 'local-data')
 const iconPath = path.join(__dirname, 'src', 'assets', 'icon.png')
+
+function formatCommitTimestamp(date) {
+    const pad = (value) => String(value).padStart(2, '0')
+
+    return [
+        date.getFullYear(),
+        pad(date.getMonth() + 1),
+        pad(date.getDate()),
+    ].join('-') +
+        ' ' +
+        [pad(date.getHours()), pad(date.getMinutes()), pad(date.getSeconds())].join(':')
+}
+
+function commitAllChanges(action, fileName) {
+    const gitOptions = { cwd: __dirname, encoding: 'utf8' }
+
+    execFileSync('git', ['add', '-A'], gitOptions)
+
+    const status = execFileSync('git', ['status', '--short'], gitOptions).trim()
+
+    if (!status) {
+        return
+    }
+
+    const commitMessage = `${action} ${fileName} ${formatCommitTimestamp(new Date())}`
+    execFileSync('git', ['commit', '-m', commitMessage], gitOptions)
+}
 
 function resolveLocalFilePath(fileName) {
     if (
@@ -73,6 +101,21 @@ function deleteLocalFile(fileName) {
     fs.unlinkSync(filePath)
 }
 
+function renameLocalFile(oldFileName, newFileName) {
+    const oldFilePath = resolveLocalFilePath(oldFileName)
+    const newFilePath = resolveLocalFilePath(newFileName)
+
+    if (!fs.existsSync(oldFilePath)) {
+        throw new Error('File not found')
+    }
+
+    if (fs.existsSync(newFilePath)) {
+        throw new Error('File already exists')
+    }
+
+    fs.renameSync(oldFilePath, newFilePath)
+}
+
 function createWindow() {
     const { workAreaSize } = screen.getPrimaryDisplay()
     const width = 1500
@@ -112,6 +155,7 @@ ipcMain.handle('local-files:read', (_event, fileName) => {
 
 ipcMain.handle('local-files:write', (_event, fileName, content) => {
     writeLocalFile(fileName, content)
+    commitAllChanges('save', fileName)
     return true
 })
 
@@ -122,6 +166,12 @@ ipcMain.handle('local-files:create', (_event, fileName) => {
 
 ipcMain.handle('local-files:delete', (_event, fileName) => {
     deleteLocalFile(fileName)
+    commitAllChanges('remove', fileName)
+    return true
+})
+
+ipcMain.handle('local-files:rename', (_event, oldFileName, newFileName) => {
+    renameLocalFile(oldFileName, newFileName)
     return true
 })
 

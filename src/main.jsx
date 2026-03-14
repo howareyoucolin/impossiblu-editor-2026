@@ -23,12 +23,32 @@ function getNextOpenTab(tabFiles, removedFile) {
     return tabFiles.find((fileName) => fileName !== removedFile) || ''
 }
 
+function getNextUntitledFileName(fileNames) {
+    const baseName = 'untitled'
+    const extension = '.txt'
+    const firstChoice = `${baseName}${extension}`
+
+    if (!fileNames.includes(firstChoice)) {
+        return firstChoice
+    }
+
+    let index = 2
+
+    while (fileNames.includes(`${baseName}-${index}${extension}`)) {
+        index += 1
+    }
+
+    return `${baseName}-${index}${extension}`
+}
+
 function App() {
     const [files, setFiles] = useState([])
     const [activeFile, setActiveFile] = useState('')
     const [openTabs, setOpenTabs] = useState([])
     const [editorStates, setEditorStates] = useState({})
     const [deleteUnlockedFile, setDeleteUnlockedFile] = useState('')
+    const [editingFileName, setEditingFileName] = useState('')
+    const [renameDraft, setRenameDraft] = useState('')
 
     const activeState = activeFile
         ? editorStates[activeFile] || getDefaultEditorState()
@@ -61,6 +81,8 @@ function App() {
                     setOpenTabs([])
                     setEditorStates({})
                     setDeleteUnlockedFile('')
+                    setEditingFileName('')
+                    setRenameDraft('')
                 }
             } catch (loadError) {
                 if (!cancelled) {
@@ -113,6 +135,8 @@ function App() {
                         },
                     }))
                     setDeleteUnlockedFile('')
+                    setEditingFileName('')
+                    setRenameDraft('')
                 }
             } catch (loadError) {
                 if (!cancelled) {
@@ -129,6 +153,8 @@ function App() {
                         },
                     }))
                     setDeleteUnlockedFile('')
+                    setEditingFileName('')
+                    setRenameDraft('')
                 }
             }
         }
@@ -186,24 +212,22 @@ function App() {
     }
 
     async function handleCreateFile() {
-        const fileName = window.prompt('New file name')
-
-        if (!fileName) {
-            return
-        }
+        const fileName = getNextUntitledFileName(files)
 
         try {
-            await window.localFiles.create(fileName.trim())
+            await window.localFiles.create(fileName)
             setDeleteUnlockedFile('')
+            setEditingFileName('')
+            setRenameDraft('')
             setEditorStates((currentStates) => ({
                 ...currentStates,
-                [fileName.trim()]: {
+                [fileName]: {
                     ...getDefaultEditorState(),
                     isLoaded: true,
-                    status: `Created ${fileName.trim()}`,
+                    status: `Created ${fileName}`,
                 },
             }))
-            await refreshFiles(fileName.trim())
+            await refreshFiles(fileName)
         } catch (createError) {
             setEditorStates((currentStates) => ({
                 ...currentStates,
@@ -230,6 +254,8 @@ function App() {
         try {
             await window.localFiles.delete(fileName)
             setDeleteUnlockedFile('')
+            setEditingFileName('')
+            setRenameDraft('')
             setEditorStates((currentStates) => {
                 const nextStates = { ...currentStates }
                 delete nextStates[fileName]
@@ -251,6 +277,66 @@ function App() {
         }
     }
 
+    async function handleRenameFile(oldFileName) {
+        if (!oldFileName) {
+            setEditingFileName('')
+            setRenameDraft('')
+            return
+        }
+
+        const nextFileName = renameDraft.trim()
+
+        if (nextFileName === '' || nextFileName === oldFileName) {
+            setEditingFileName('')
+            setRenameDraft('')
+            return
+        }
+
+        try {
+            await window.localFiles.rename(oldFileName, nextFileName)
+
+            setFiles((currentFiles) =>
+                currentFiles
+                    .map((fileName) =>
+                        fileName === oldFileName ? nextFileName : fileName
+                    )
+                    .sort((a, b) => a.localeCompare(b))
+            )
+            setOpenTabs((currentTabs) =>
+                currentTabs.map((fileName) =>
+                    fileName === oldFileName ? nextFileName : fileName
+                )
+            )
+            setEditorStates((currentStates) => {
+                const nextStates = { ...currentStates }
+                nextStates[nextFileName] =
+                    nextStates[oldFileName] || getDefaultEditorState()
+                delete nextStates[oldFileName]
+                return nextStates
+            })
+
+            if (activeFile === oldFileName) {
+                setActiveFile(nextFileName)
+            }
+
+            if (deleteUnlockedFile === oldFileName) {
+                setDeleteUnlockedFile('')
+            }
+
+            setEditingFileName('')
+            setRenameDraft('')
+        } catch (renameError) {
+            setEditorStates((currentStates) => ({
+                ...currentStates,
+                [activeFile]: {
+                    ...(currentStates[activeFile] || getDefaultEditorState()),
+                    error: renameError.message || `Failed to rename ${oldFileName}.`,
+                    status: '',
+                },
+            }))
+        }
+    }
+
     function handleCloseTab(fileName) {
         const nextTabs = openTabs.filter((tabFileName) => tabFileName !== fileName)
         setOpenTabs(nextTabs)
@@ -264,15 +350,31 @@ function App() {
         <main className="app-shell">
             <Sidebar
                 deleteUnlockedFile={deleteUnlockedFile}
+                editingFileName={editingFileName}
                 files={files}
                 onCreateFile={handleCreateFile}
                 onDeleteFile={handleDeleteFile}
+                onRenameCancel={() => {
+                    setEditingFileName('')
+                    setRenameDraft('')
+                }}
+                onRenameChange={setRenameDraft}
+                onRenameCommit={handleRenameFile}
+                onRenameStart={(fileName) => {
+                    if (deleteUnlockedFile !== fileName) {
+                        return
+                    }
+
+                    setEditingFileName(fileName)
+                    setRenameDraft(fileName)
+                }}
                 onSelectFile={openFile}
                 onToggleDeleteLock={(fileName) =>
                     setDeleteUnlockedFile((current) =>
                         current === fileName ? '' : fileName
                     )
                 }
+                renameDraft={renameDraft}
                 selectedFile={activeFile}
             />
             <ContentPanel

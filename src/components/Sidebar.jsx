@@ -2,11 +2,17 @@ import React from 'react'
 
 export function Sidebar({
     deleteUnlockedFile,
+    editingFileName,
     files,
     onCreateFile,
     onDeleteFile,
+    onRenameCancel,
+    onRenameChange,
+    onRenameCommit,
+    onRenameStart,
     onSelectFile,
     onToggleDeleteLock,
+    renameDraft,
     selectedFile,
 }) {
     return (
@@ -32,13 +38,35 @@ export function Sidebar({
                                 : 'file-row'
                         }
                     >
-                        <button
-                            className="file-button"
-                            onClick={() => onSelectFile(fileName)}
-                            type="button"
-                        >
-                            {fileName}
-                        </button>
+                        {editingFileName === fileName ? (
+                            <input
+                                autoFocus
+                                className="file-rename-input"
+                                onBlur={() => onRenameCommit(fileName)}
+                                onChange={(event) =>
+                                    onRenameChange(event.target.value)
+                                }
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        onRenameCommit(fileName)
+                                    }
+
+                                    if (event.key === 'Escape') {
+                                        onRenameCancel()
+                                    }
+                                }}
+                                value={renameDraft}
+                            />
+                        ) : (
+                            <button
+                                className="file-button"
+                                onClick={() => onSelectFile(fileName)}
+                                onDoubleClick={() => onRenameStart(fileName)}
+                                type="button"
+                            >
+                                {fileName}
+                            </button>
+                        )}
                         <div className="file-actions">
                             <button
                                 aria-label={
