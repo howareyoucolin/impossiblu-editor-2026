@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { ContentPanel } from './components/ContentPanel'
 import { Sidebar } from './components/Sidebar'
+import { Setup } from './components/Setup'
 import './styles.css'
 
 function getNextSelectedFile(fileNames, removedFile) {
@@ -58,7 +59,10 @@ function App() {
     const [copyBubble, setCopyBubble] = useState(null)
     const [deleteUnlockedFile, setDeleteUnlockedFile] = useState('')
     const [editingFileName, setEditingFileName] = useState('')
+    const [isDataDirectoryReady, setIsDataDirectoryReady] = useState(null)
+    const [isSettingUp, setIsSettingUp] = useState(false)
     const [renameDraft, setRenameDraft] = useState('')
+    const [setupError, setSetupError] = useState('')
 
     const activeState = activeFile
         ? editorStates[activeFile] || getDefaultEditorState()
@@ -73,6 +77,35 @@ function App() {
     }
 
     useEffect(() => {
+        let cancelled = false
+
+        async function checkDataDirectory() {
+            try {
+                const exists = await window.localFiles.exists()
+
+                if (!cancelled) {
+                    setIsDataDirectoryReady(exists)
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setIsDataDirectoryReady(false)
+                    setSetupError('Failed to check local-data.')
+                }
+            }
+        }
+
+        checkDataDirectory()
+
+        return () => {
+            cancelled = true
+        }
+    }, [])
+
+    useEffect(() => {
+        if (!isDataDirectoryReady) {
+            return undefined
+        }
+
         let cancelled = false
 
         async function loadFiles() {
@@ -115,7 +148,7 @@ function App() {
         return () => {
             cancelled = true
         }
-    }, [])
+    }, [isDataDirectoryReady])
 
     useEffect(() => {
         let cancelled = false
@@ -360,6 +393,34 @@ function App() {
         if (activeFile === fileName) {
             setActiveFile(getNextOpenTab(nextTabs, ''))
         }
+    }
+
+    async function handleSetup() {
+        setIsSettingUp(true)
+        setSetupError('')
+
+        try {
+            await window.localFiles.setup()
+            setIsDataDirectoryReady(true)
+        } catch (error) {
+            setSetupError(error.message || 'Failed to set up local-data.')
+        } finally {
+            setIsSettingUp(false)
+        }
+    }
+
+    if (isDataDirectoryReady === null) {
+        return null
+    }
+
+    if (!isDataDirectoryReady) {
+        return (
+            <Setup
+                error={setupError}
+                isSettingUp={isSettingUp}
+                onSetup={handleSetup}
+            />
+        )
     }
 
     return (

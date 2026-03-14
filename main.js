@@ -6,6 +6,10 @@ const path = require('path')
 const dataDirectory = path.join(__dirname, 'local-data')
 const iconPath = path.join(__dirname, 'src', 'assets', 'icon.png')
 
+function hasDataDirectory() {
+    return fs.existsSync(dataDirectory) && fs.statSync(dataDirectory).isDirectory()
+}
+
 function formatCommitTimestamp(date) {
     const pad = (value) => String(value).padStart(2, '0')
 
@@ -31,6 +35,29 @@ function commitAllChanges(action, fileName) {
 
     const commitMessage = `${action} ${fileName} ${formatCommitTimestamp(new Date())}`
     execFileSync('git', ['commit', '-m', commitMessage], gitOptions)
+}
+
+function commitWithMessage(message) {
+    const gitOptions = { cwd: dataDirectory, encoding: 'utf8' }
+
+    execFileSync('git', ['add', '-A'], gitOptions)
+
+    const status = execFileSync('git', ['status', '--short'], gitOptions).trim()
+
+    if (!status) {
+        return
+    }
+
+    execFileSync('git', ['commit', '-m', message], gitOptions)
+}
+
+function setupDataDirectory() {
+    fs.mkdirSync(dataDirectory, { recursive: true })
+    fs.chmodSync(dataDirectory, 0o777)
+
+    if (!fs.existsSync(path.join(dataDirectory, '.git'))) {
+        execFileSync('git', ['init'], { cwd: dataDirectory, encoding: 'utf8' })
+    }
 }
 
 function resolveLocalFilePath(fileName) {
@@ -149,6 +176,15 @@ ipcMain.handle('local-files:list', () => {
     return listLocalFiles()
 })
 
+ipcMain.handle('local-files:exists', () => {
+    return hasDataDirectory()
+})
+
+ipcMain.handle('local-files:setup', () => {
+    setupDataDirectory()
+    return true
+})
+
 ipcMain.handle('local-files:read', (_event, fileName) => {
     return readLocalFile(fileName)
 })
@@ -161,6 +197,7 @@ ipcMain.handle('local-files:write', (_event, fileName, content) => {
 
 ipcMain.handle('local-files:create', (_event, fileName) => {
     createLocalFile(fileName)
+    commitAllChanges('create', fileName)
     return true
 })
 
@@ -172,6 +209,9 @@ ipcMain.handle('local-files:delete', (_event, fileName) => {
 
 ipcMain.handle('local-files:rename', (_event, oldFileName, newFileName) => {
     renameLocalFile(oldFileName, newFileName)
+    commitWithMessage(
+        `rename ${oldFileName} to ${newFileName} ${formatCommitTimestamp(new Date())}`
+    )
     return true
 })
 
