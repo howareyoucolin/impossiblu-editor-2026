@@ -17,6 +17,7 @@ body {
 }
 
 .sidebar {
+  position: relative;
   border-right: 1px solid #d4cdbd;
   padding: 24px 18px;
   background: #ded7c6;
@@ -33,6 +34,11 @@ body {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.sidebar-toolbar-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .sidebar-add-button {
@@ -264,4 +270,17 @@ body {
   padding: 18px;
   border-radius: 14px;
   background: #f7f3ea;
+}
+
+.copy-bubble {
+  position: absolute;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #b64646;
+  color: #f7f3ea;
+  font-size: 0.76rem;
+  line-height: 1;
+  pointer-events: none;
+  box-shadow: 0 10px 22px rgba(29, 29, 29, 0.22);
+  transform: translate(-150%, 18px);
 }

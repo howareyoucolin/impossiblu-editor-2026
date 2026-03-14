@@ -1,9 +1,11 @@
 import React from 'react'
 
 export function Sidebar({
+    copyBubble,
     deleteUnlockedFile,
     editingFileName,
     files,
+    onCopyOpenFiles,
     onCreateFile,
     onDeleteFile,
     onRenameCancel,
@@ -19,14 +21,24 @@ export function Sidebar({
         <aside className="sidebar">
             <div className="sidebar-toolbar">
                 <h1>Files</h1>
-                <button
-                    className="sidebar-add-button"
-                    aria-label="Add new file"
-                    onClick={onCreateFile}
-                    type="button"
-                >
-                    <i className="fa-solid fa-file-circle-plus" aria-hidden="true" />
-                </button>
+                <div className="sidebar-toolbar-actions">
+                    <button
+                        className="sidebar-add-button"
+                        aria-label="Copy open files for ChatGPT"
+                        onClick={onCopyOpenFiles}
+                        type="button"
+                    >
+                        <i className="fa-solid fa-copy" aria-hidden="true" />
+                    </button>
+                    <button
+                        className="sidebar-add-button"
+                        aria-label="Add new file"
+                        onClick={onCreateFile}
+                        type="button"
+                    >
+                        <i className="fa-solid fa-file-circle-plus" aria-hidden="true" />
+                    </button>
+                </div>
             </div>
             <div className="file-list">
                 {files.map((fileName) => (
@@ -100,6 +112,17 @@ export function Sidebar({
                     </div>
                 ))}
             </div>
+            {copyBubble ? (
+                <div
+                    className="copy-bubble"
+                    style={{
+                        left: `${copyBubble.x}px`,
+                        top: `${copyBubble.y}px`,
+                    }}
+                >
+                    {copyBubble.label}
+                </div>
+            ) : null}
         </aside>
     )
 }

@@ -19,7 +19,7 @@ function formatCommitTimestamp(date) {
 }
 
 function commitAllChanges(action, fileName) {
-    const gitOptions = { cwd: __dirname, encoding: 'utf8' }
+    const gitOptions = { cwd: dataDirectory, encoding: 'utf8' }
 
     execFileSync('git', ['add', '-A'], gitOptions)
 

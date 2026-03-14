@@ -41,11 +41,21 @@ function getNextUntitledFileName(fileNames) {
     return `${baseName}-${index}${extension}`
 }
 
+function buildCombinedOpenTabsContent(openTabs, editorStates) {
+    return openTabs
+        .map((fileName) => {
+            const fileContent = editorStates[fileName]?.content || ''
+            return `===== ${fileName} =====\n${fileContent}`
+        })
+        .join('\n\n')
+}
+
 function App() {
     const [files, setFiles] = useState([])
     const [activeFile, setActiveFile] = useState('')
     const [openTabs, setOpenTabs] = useState([])
     const [editorStates, setEditorStates] = useState({})
+    const [copyBubble, setCopyBubble] = useState(null)
     const [deleteUnlockedFile, setDeleteUnlockedFile] = useState('')
     const [editingFileName, setEditingFileName] = useState('')
     const [renameDraft, setRenameDraft] = useState('')
@@ -53,6 +63,7 @@ function App() {
     const activeState = activeFile
         ? editorStates[activeFile] || getDefaultEditorState()
         : getDefaultEditorState()
+    const combinedOpenTabsContent = buildCombinedOpenTabsContent(openTabs, editorStates)
 
     function openFile(fileName) {
         setActiveFile(fileName)
@@ -80,6 +91,7 @@ function App() {
                     setActiveFile('')
                     setOpenTabs([])
                     setEditorStates({})
+                    setCopyBubble(null)
                     setDeleteUnlockedFile('')
                     setEditingFileName('')
                     setRenameDraft('')
@@ -136,6 +148,7 @@ function App() {
                     }))
                     setDeleteUnlockedFile('')
                     setEditingFileName('')
+                    setCopyBubble(null)
                     setRenameDraft('')
                 }
             } catch (loadError) {
@@ -154,6 +167,7 @@ function App() {
                     }))
                     setDeleteUnlockedFile('')
                     setEditingFileName('')
+                    setCopyBubble(null)
                     setRenameDraft('')
                 }
             }
@@ -218,6 +232,7 @@ function App() {
             await window.localFiles.create(fileName)
             setDeleteUnlockedFile('')
             setEditingFileName('')
+            setCopyBubble(null)
             setRenameDraft('')
             setEditorStates((currentStates) => ({
                 ...currentStates,
@@ -255,6 +270,7 @@ function App() {
             await window.localFiles.delete(fileName)
             setDeleteUnlockedFile('')
             setEditingFileName('')
+            setCopyBubble(null)
             setRenameDraft('')
             setEditorStates((currentStates) => {
                 const nextStates = { ...currentStates }
@@ -352,6 +368,18 @@ function App() {
                 deleteUnlockedFile={deleteUnlockedFile}
                 editingFileName={editingFileName}
                 files={files}
+                copyBubble={copyBubble}
+                onCopyOpenFiles={async (event) => {
+                    await navigator.clipboard.writeText(combinedOpenTabsContent)
+                    setCopyBubble({
+                        label: `${openTabs.length} files copied`,
+                        x: event.clientX + 10,
+                        y: event.clientY - 36,
+                    })
+                    window.setTimeout(() => {
+                        setCopyBubble(null)
+                    }, 1200)
+                }}
                 onCreateFile={handleCreateFile}
                 onDeleteFile={handleDeleteFile}
                 onRenameCancel={() => {
