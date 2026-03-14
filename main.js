@@ -3,6 +3,26 @@ const fs = require('fs')
 const path = require('path')
 
 const dataDirectory = path.join(__dirname, 'local-data')
+const iconPath = path.join(__dirname, 'src', 'assets', 'icon.png')
+
+function resolveLocalFilePath(fileName) {
+    if (
+        typeof fileName !== 'string' ||
+        fileName.trim() === '' ||
+        fileName !== path.basename(fileName)
+    ) {
+        throw new Error('Invalid file name')
+    }
+
+    const filePath = path.join(dataDirectory, fileName)
+    const relativePath = path.relative(dataDirectory, filePath)
+
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+        throw new Error('Invalid file path')
+    }
+
+    return filePath
+}
 
 function listLocalFiles() {
     if (!fs.existsSync(dataDirectory)) {
@@ -17,14 +37,9 @@ function listLocalFiles() {
 }
 
 function readLocalFile(fileName) {
-    const filePath = path.join(dataDirectory, fileName)
-    const relativePath = path.relative(dataDirectory, filePath)
+    const filePath = resolveLocalFilePath(fileName)
 
-    if (
-        relativePath.startsWith('..') ||
-        path.isAbsolute(relativePath) ||
-        !fs.existsSync(filePath)
-    ) {
+    if (!fs.existsSync(filePath)) {
         throw new Error('File not found')
     }
 
@@ -32,25 +47,42 @@ function readLocalFile(fileName) {
 }
 
 function writeLocalFile(fileName, content) {
-    const filePath = path.join(dataDirectory, fileName)
-    const relativePath = path.relative(dataDirectory, filePath)
+    const filePath = resolveLocalFilePath(fileName)
+    fs.writeFileSync(filePath, content, 'utf8')
+}
 
-    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-        throw new Error('Invalid file path')
+function createLocalFile(fileName) {
+    const filePath = resolveLocalFilePath(fileName)
+
+    fs.mkdirSync(dataDirectory, { recursive: true })
+
+    if (fs.existsSync(filePath)) {
+        throw new Error('File already exists')
     }
 
-    fs.writeFileSync(filePath, content, 'utf8')
+    fs.writeFileSync(filePath, '', 'utf8')
+}
+
+function deleteLocalFile(fileName) {
+    const filePath = resolveLocalFilePath(fileName)
+
+    if (!fs.existsSync(filePath)) {
+        throw new Error('File not found')
+    }
+
+    fs.unlinkSync(filePath)
 }
 
 function createWindow() {
     const { workAreaSize } = screen.getPrimaryDisplay()
-    const width = Math.round(workAreaSize.width * 0.9)
+    const width = 1500
     const height = Math.round(workAreaSize.height * 0.9)
 
     const win = new BrowserWindow({
         width,
         height,
         resizable: false,
+        icon: iconPath,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -83,7 +115,21 @@ ipcMain.handle('local-files:write', (_event, fileName, content) => {
     return true
 })
 
+ipcMain.handle('local-files:create', (_event, fileName) => {
+    createLocalFile(fileName)
+    return true
+})
+
+ipcMain.handle('local-files:delete', (_event, fileName) => {
+    deleteLocalFile(fileName)
+    return true
+})
+
 app.whenReady().then(() => {
+    if (process.platform === 'darwin' && app.dock && fs.existsSync(iconPath)) {
+        app.dock.setIcon(iconPath)
+    }
+
     createWindow()
 
     app.on('activate', () => {

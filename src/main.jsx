@@ -1,15 +1,45 @@
 import React, { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
+import { ContentPanel } from './components/ContentPanel'
+import { Sidebar } from './components/Sidebar'
 import './styles.css'
+
+function getNextSelectedFile(fileNames, removedFile) {
+    return fileNames.find((fileName) => fileName !== removedFile) || ''
+}
+
+function getDefaultEditorState() {
+    return {
+        content: '',
+        error: '',
+        isDirty: false,
+        isLoaded: false,
+        isLocked: true,
+        status: '',
+    }
+}
+
+function getNextOpenTab(tabFiles, removedFile) {
+    return tabFiles.find((fileName) => fileName !== removedFile) || ''
+}
 
 function App() {
     const [files, setFiles] = useState([])
-    const [selectedFile, setSelectedFile] = useState('')
-    const [content, setContent] = useState('')
-    const [error, setError] = useState('')
-    const [status, setStatus] = useState('')
-    const [isDirty, setIsDirty] = useState(false)
-    const [isLocked, setIsLocked] = useState(true)
+    const [activeFile, setActiveFile] = useState('')
+    const [openTabs, setOpenTabs] = useState([])
+    const [editorStates, setEditorStates] = useState({})
+    const [deleteUnlockedFile, setDeleteUnlockedFile] = useState('')
+
+    const activeState = activeFile
+        ? editorStates[activeFile] || getDefaultEditorState()
+        : getDefaultEditorState()
+
+    function openFile(fileName) {
+        setActiveFile(fileName)
+        setOpenTabs((currentTabs) =>
+            currentTabs.includes(fileName) ? currentTabs : [...currentTabs, fileName]
+        )
+    }
 
     useEffect(() => {
         let cancelled = false
@@ -23,19 +53,25 @@ function App() {
                 }
 
                 setFiles(nextFiles)
-                setError('')
-                setStatus('')
 
                 if (nextFiles.length > 0) {
-                    setSelectedFile(nextFiles[0])
+                    openFile(nextFiles[0])
                 } else {
-                    setSelectedFile('')
-                    setContent('')
-                    setIsLocked(true)
+                    setActiveFile('')
+                    setOpenTabs([])
+                    setEditorStates({})
+                    setDeleteUnlockedFile('')
                 }
             } catch (loadError) {
                 if (!cancelled) {
-                    setError('Failed to load files.')
+                    setEditorStates((currentStates) => ({
+                        ...currentStates,
+                        [activeFile]: {
+                            ...(currentStates[activeFile] || getDefaultEditorState()),
+                            error: 'Failed to load files.',
+                            status: '',
+                        },
+                    }))
                 }
             }
         }
@@ -51,28 +87,48 @@ function App() {
         let cancelled = false
 
         async function loadContent() {
-            if (!selectedFile) {
-                setContent('')
+            if (!activeFile) {
+                return
+            }
+
+            const currentState = editorStates[activeFile]
+
+            if (currentState?.isLoaded) {
                 return
             }
 
             try {
-                const nextContent = await window.localFiles.read(selectedFile)
+                const nextContent = await window.localFiles.read(activeFile)
 
                 if (!cancelled) {
-                    setContent(nextContent)
-                    setError('')
-                    setStatus('')
-                    setIsDirty(false)
-                    setIsLocked(true)
+                    setEditorStates((currentStates) => ({
+                        ...currentStates,
+                        [activeFile]: {
+                            content: nextContent,
+                            error: '',
+                            isDirty: false,
+                            isLoaded: true,
+                            isLocked: true,
+                            status: '',
+                        },
+                    }))
+                    setDeleteUnlockedFile('')
                 }
             } catch (loadError) {
                 if (!cancelled) {
-                    setContent('')
-                    setError(`Failed to read ${selectedFile}.`)
-                    setStatus('')
-                    setIsDirty(false)
-                    setIsLocked(true)
+                    setEditorStates((currentStates) => ({
+                        ...currentStates,
+                        [activeFile]: {
+                            ...(currentStates[activeFile] || getDefaultEditorState()),
+                            content: '',
+                            error: `Failed to read ${activeFile}.`,
+                            isDirty: false,
+                            isLoaded: true,
+                            isLocked: true,
+                            status: '',
+                        },
+                    }))
+                    setDeleteUnlockedFile('')
                 }
             }
         }
@@ -82,100 +138,176 @@ function App() {
         return () => {
             cancelled = true
         }
-    }, [selectedFile])
+    }, [activeFile, editorStates])
 
-    async function handleSave() {
-        if (!selectedFile) {
+    async function handleSaveTab(fileName) {
+        const nextState = editorStates[fileName] || getDefaultEditorState()
+
+        try {
+            await window.localFiles.write(fileName, nextState.content)
+            setEditorStates((currentStates) => ({
+                ...currentStates,
+                [fileName]: {
+                    ...(currentStates[fileName] || getDefaultEditorState()),
+                    error: '',
+                    isDirty: false,
+                    isLocked: true,
+                    status: 'Saved',
+                },
+            }))
+        } catch (saveError) {
+            setEditorStates((currentStates) => ({
+                ...currentStates,
+                [fileName]: {
+                    ...(currentStates[fileName] || getDefaultEditorState()),
+                    error: `Failed to save ${fileName}.`,
+                    status: '',
+                },
+            }))
+        }
+    }
+
+    async function refreshFiles(nextSelectedFile = activeFile) {
+        const nextFiles = await window.localFiles.list()
+        setFiles(nextFiles)
+
+        if (nextSelectedFile && nextFiles.includes(nextSelectedFile)) {
+            openFile(nextSelectedFile)
+            return
+        }
+
+        if (nextFiles[0]) {
+            openFile(nextFiles[0])
+            return
+        }
+
+        setActiveFile('')
+        setOpenTabs([])
+    }
+
+    async function handleCreateFile() {
+        const fileName = window.prompt('New file name')
+
+        if (!fileName) {
             return
         }
 
         try {
-            await window.localFiles.write(selectedFile, content)
-            setStatus('Saved')
-            setError('')
-            setIsDirty(false)
-            setIsLocked(true)
-        } catch (saveError) {
-            setStatus('')
-            setError(`Failed to save ${selectedFile}.`)
+            await window.localFiles.create(fileName.trim())
+            setDeleteUnlockedFile('')
+            setEditorStates((currentStates) => ({
+                ...currentStates,
+                [fileName.trim()]: {
+                    ...getDefaultEditorState(),
+                    isLoaded: true,
+                    status: `Created ${fileName.trim()}`,
+                },
+            }))
+            await refreshFiles(fileName.trim())
+        } catch (createError) {
+            setEditorStates((currentStates) => ({
+                ...currentStates,
+                [activeFile]: {
+                    ...(currentStates[activeFile] || getDefaultEditorState()),
+                    error: createError.message || 'Failed to create file.',
+                    status: '',
+                },
+            }))
+        }
+    }
+
+    async function handleDeleteFile(fileName) {
+        if (deleteUnlockedFile !== fileName) {
+            return
+        }
+
+        const shouldDelete = window.confirm(`Delete ${fileName}?`)
+
+        if (!shouldDelete) {
+            return
+        }
+
+        try {
+            await window.localFiles.delete(fileName)
+            setDeleteUnlockedFile('')
+            setEditorStates((currentStates) => {
+                const nextStates = { ...currentStates }
+                delete nextStates[fileName]
+                return nextStates
+            })
+            setOpenTabs((currentTabs) =>
+                currentTabs.filter((tabFileName) => tabFileName !== fileName)
+            )
+            await refreshFiles(getNextSelectedFile(files, fileName))
+        } catch (deleteError) {
+            setEditorStates((currentStates) => ({
+                ...currentStates,
+                [activeFile]: {
+                    ...(currentStates[activeFile] || getDefaultEditorState()),
+                    error: deleteError.message || `Failed to delete ${fileName}.`,
+                    status: '',
+                },
+            }))
+        }
+    }
+
+    function handleCloseTab(fileName) {
+        const nextTabs = openTabs.filter((tabFileName) => tabFileName !== fileName)
+        setOpenTabs(nextTabs)
+
+        if (activeFile === fileName) {
+            setActiveFile(getNextOpenTab(nextTabs, ''))
         }
     }
 
     return (
         <main className="app-shell">
-            <aside className="sidebar">
-                <h1>Files</h1>
-                <div className="file-list">
-                    {files.map((fileName) => (
-                        <button
-                            key={fileName}
-                            className={
-                                fileName === selectedFile
-                                    ? 'file-button is-active'
-                                    : 'file-button'
-                            }
-                            onClick={() => setSelectedFile(fileName)}
-                            type="button"
-                        >
-                            {fileName}
-                        </button>
-                    ))}
-                </div>
-            </aside>
-            <section className="content-panel">
-                <header className="content-header">
-                    <div>
-                        <h2>{selectedFile || 'No file selected'}</h2>
-                        <p className="content-status">
-                            {error ||
-                                status ||
-                                (isLocked
-                                    ? 'Locked'
-                                    : isDirty
-                                      ? 'Unsaved changes'
-                                      : 'Unlocked')}
-                        </p>
-                    </div>
-                    <div className="action-row">
-                        <button
-                            className={
-                                isLocked ? 'lock-button is-locked' : 'lock-button'
-                            }
-                            disabled={!selectedFile}
-                            onClick={() => setIsLocked((current) => !current)}
-                            type="button"
-                        >
-                            {isLocked ? 'Unlock' : 'Lock'}
-                        </button>
-                        <button
-                            className="save-button"
-                            disabled={!selectedFile || isLocked || !isDirty}
-                            onClick={handleSave}
-                            type="button"
-                        >
-                            Save
-                        </button>
-                    </div>
-                </header>
-                {selectedFile ? (
-                    <textarea
-                        className="content-editor"
-                        readOnly={isLocked}
-                        onChange={(event) => {
-                            setContent(event.target.value)
-                            setIsDirty(true)
-                            setStatus('')
-                            if (error) {
-                                setError('')
-                            }
-                        }}
-                        spellCheck={false}
-                        value={content}
-                    />
-                ) : (
-                    <p className="message">No files found in local-data.</p>
-                )}
-            </section>
+            <Sidebar
+                deleteUnlockedFile={deleteUnlockedFile}
+                files={files}
+                onCreateFile={handleCreateFile}
+                onDeleteFile={handleDeleteFile}
+                onSelectFile={openFile}
+                onToggleDeleteLock={(fileName) =>
+                    setDeleteUnlockedFile((current) =>
+                        current === fileName ? '' : fileName
+                    )
+                }
+                selectedFile={activeFile}
+            />
+            <ContentPanel
+                activeFile={activeFile}
+                activeState={activeState}
+                onActivateTab={setActiveFile}
+                onCloseTab={handleCloseTab}
+                onChangeContent={(nextContent) => {
+                    setEditorStates((currentStates) => ({
+                        ...currentStates,
+                        [activeFile]: {
+                            ...(currentStates[activeFile] || getDefaultEditorState()),
+                            content: nextContent,
+                            error: '',
+                            isDirty: true,
+                            isLoaded: true,
+                            status: '',
+                        },
+                    }))
+                }}
+                editorStates={editorStates}
+                openTabs={openTabs}
+                onSaveTab={handleSaveTab}
+                onToggleTabLock={(fileName) =>
+                    setEditorStates((currentStates) => ({
+                        ...currentStates,
+                        [fileName]: {
+                            ...(currentStates[fileName] || getDefaultEditorState()),
+                            isLocked:
+                                !(currentStates[fileName] || getDefaultEditorState())
+                                    .isLocked,
+                        },
+                    }))
+                }
+            />
         </main>
     )
 }

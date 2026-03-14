@@ -17,9 +17,11 @@
   "build": {
     "appId": "com.example.electronlocalfileviewer2026",
     "productName": "HelloWorldElectron",
+    "icon": "src/assets/icon.png",
     "files": [
       "main.js",
       "preload.js",
+      "src/assets/icon.png",
       "react-dist/**/*",
       "index.html",
       "package.json"

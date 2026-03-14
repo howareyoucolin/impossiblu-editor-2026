@@ -24,13 +24,46 @@ body {
 
 .sidebar h1 {
   margin: 0;
-  font-size: 1.4rem;
+  font-size: 1.1rem;
+}
+
+.sidebar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 16px;
+}
+
+.sidebar-add-button {
+  border: 0;
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  font: inherit;
+  background: #1d1d1d;
+  color: #f7f3ea;
+  cursor: pointer;
 }
 
 .file-list {
   display: grid;
   gap: 10px;
+}
+
+.file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+  background: #f7f3ea;
+}
+
+.file-row.is-active {
+  background: #1d1d1d;
 }
 
 .file-button {
@@ -40,19 +73,51 @@ body {
   text-align: left;
   font: inherit;
   color: inherit;
-  background: #f7f3ea;
+  background: transparent;
   cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.file-button.is-active {
-  background: #1d1d1d;
+.file-row.is-active .file-button,
+.file-row.is-active .file-delete-button,
+.file-row.is-active .file-lock-button {
   color: #f7f3ea;
 }
 
-.content-panel {
-  padding: 24px;
+.file-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+}
+
+.file-lock-button,
+.file-delete-button {
+  border: 0;
+  background: transparent;
+  color: #6a6457;
   display: grid;
-  grid-template-rows: auto 1fr;
+  place-items: center;
+  font: inherit;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.file-lock-button:disabled,
+.file-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.content-panel {
+  padding: 14px 24px 24px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
   gap: 16px;
 }
 
@@ -68,11 +133,6 @@ body {
   gap: 16px;
 }
 
-.action-row {
-  display: flex;
-  gap: 10px;
-}
-
 .content-status {
   margin: 6px 0 0;
   min-height: 1.25rem;
@@ -80,30 +140,57 @@ body {
   font-size: 0.95rem;
 }
 
-.lock-button,
-.save-button {
+.content-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.content-tab {
   border: 0;
   border-radius: 999px;
-  padding: 12px 18px;
-  font: inherit;
+  padding: 6px 8px 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #d8d0bc;
+  color: #4d4638;
+  white-space: nowrap;
+}
+
+.content-tab.is-active {
+  background: #1d1d1d;
   color: #f7f3ea;
+}
+
+.content-tab-label {
+  border: 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
   cursor: pointer;
 }
 
-.lock-button {
-  background: #8d846f;
+.content-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.lock-button.is-locked {
-  background: #5f5849;
+.content-tab-icon-button {
+  border: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
 }
 
-.save-button {
-  background: #1d1d1d;
-}
-
-.lock-button:disabled,
-.save-button:disabled {
+.content-tab-icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
