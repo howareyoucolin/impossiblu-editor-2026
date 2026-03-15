@@ -280,7 +280,7 @@ function createWindow() {
     })
 
     const devServerUrl = process.env.ELECTRON_RENDERER_URL
-    const reactBuildPath = path.join(__dirname, 'react-dist', 'index.html')
+    const reactBuildPath = path.join(__dirname, 'react-dist', 'react.html')
     const fallbackPath = path.join(__dirname, 'index.html')
 
     if (devServerUrl) {
