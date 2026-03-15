@@ -6,10 +6,12 @@ export function Sidebar({
     editingFileName,
     files,
     isHistoryOpen,
+    isUsageLookupOpen,
     isSidebarSearchOpen,
     isSidebarSearchLoading,
     onChangeSidebarSearch,
     onOpenHistory,
+    onOpenUsageLookup,
     onCopyOpenFiles,
     onCreateFile,
     onDeleteFile,
@@ -32,6 +34,20 @@ export function Sidebar({
         <aside className="sidebar">
             <div className="sidebar-toolbar">
                 <div className="sidebar-toolbar-actions">
+                    <button
+                        className={
+                            isUsageLookupOpen
+                                ? 'sidebar-add-button is-active'
+                                : 'sidebar-add-button'
+                        }
+                        aria-label="Show custom tag usage"
+                        onClick={onOpenUsageLookup}
+                        onMouseEnter={() => setHoveredToolbarButton('Tag Usage')}
+                        onMouseLeave={() => setHoveredToolbarButton('')}
+                        type="button"
+                    >
+                        <i className="fa-solid fa-circle-question" aria-hidden="true" />
+                    </button>
                     <button
                         className={
                             isHistoryOpen

@@ -78,6 +78,7 @@ function App() {
     const [sidebarSearchResults, setSidebarSearchResults] = useState([])
     const [contentSearchJump, setContentSearchJump] = useState(null)
     const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+    const [isUsageLookupOpen, setIsUsageLookupOpen] = useState(false)
     const [historyMessages, setHistoryMessages] = useState([])
     const [historyError, setHistoryError] = useState('')
     const [historyActionError, setHistoryActionError] = useState('')
@@ -589,10 +590,12 @@ function App() {
                 editingFileName={editingFileName}
                 files={files}
                 isHistoryOpen={isHistoryOpen}
+                isUsageLookupOpen={isUsageLookupOpen}
                 isSidebarSearchOpen={isSidebarSearchOpen}
                 isSidebarSearchLoading={isSidebarSearchLoading}
                 onChangeSidebarSearch={setSidebarSearchQuery}
                 onOpenHistory={openHistoryModal}
+                onOpenUsageLookup={() => setIsUsageLookupOpen(true)}
                 copyBubble={copyBubble}
                 onCopyOpenFiles={async (event) => {
                     await navigator.clipboard.writeText(combinedOpenTabsContent)
@@ -647,6 +650,53 @@ function App() {
                 sidebarSearchQuery={sidebarSearchQuery}
                 selectedFile={activeFile}
             />
+            {isUsageLookupOpen ? (
+                <div className="history-modal-backdrop" role="presentation">
+                    <div
+                        aria-labelledby="usage-lookup-title"
+                        aria-modal="true"
+                        className="history-modal usage-modal"
+                        role="dialog"
+                    >
+                        <div className="history-modal-header">
+                            <h2 id="usage-lookup-title">Custom Tag Usage</h2>
+                            <div className="history-modal-header-actions">
+                                <button
+                                    aria-label="Close tag usage"
+                                    className="history-modal-close"
+                                    onClick={() => setIsUsageLookupOpen(false)}
+                                    type="button"
+                                >
+                                    x
+                                </button>
+                            </div>
+                        </div>
+                        <div className="usage-modal-list">
+                            <div className="usage-modal-item">
+                                <div className="usage-modal-tag">[copy=secret-text]</div>
+                                <p className="usage-modal-description">
+                                    Highlights `secret-text` in readonly mode. Click it
+                                    to copy the value.
+                                </p>
+                            </div>
+                            <div className="usage-modal-item">
+                                <div className="usage-modal-tag">[pass=my-password]</div>
+                                <p className="usage-modal-description">
+                                    Shows masked text like `***********` in readonly mode.
+                                    Click it to copy the real password.
+                                </p>
+                            </div>
+                            <div className="usage-modal-item">
+                                <div className="usage-modal-tag">[link=openai.com]</div>
+                                <p className="usage-modal-description">
+                                    Underlines `openai.com` in readonly mode. Click it
+                                    to open a new tab in Chrome.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
             {isHistoryOpen ? (
                 <div className="history-modal-backdrop" role="presentation">
                     <div

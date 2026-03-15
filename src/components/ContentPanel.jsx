@@ -1,7 +1,115 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 
+const TAG_PATTERN = /\[(copy|pass|link)=([^\]]*)\]/g
+
 function formatTabLabel(fileName) {
     return fileName.length > 15 ? `${fileName.slice(0, 15)}...` : fileName
+}
+
+function parseReadonlySegments(content) {
+    const segments = []
+    let lastIndex = 0
+    let match
+    TAG_PATTERN.lastIndex = 0
+
+    while ((match = TAG_PATTERN.exec(content)) !== null) {
+        const [rawText, type, value] = match
+        const start = match.index
+
+        if (start > lastIndex) {
+            segments.push({
+                displayText: content.slice(lastIndex, start),
+                rawEnd: start,
+                rawStart: lastIndex,
+                type: 'text',
+            })
+        }
+
+        const prefixLength = `[${type}=`.length
+
+        segments.push({
+            displayText: type === 'pass' ? '*'.repeat(value.length) : value,
+            rawEnd: start + rawText.length,
+            rawStart: start,
+            type,
+            value,
+            valueRawEnd: start + prefixLength + value.length,
+            valueRawStart: start + prefixLength,
+        })
+
+        lastIndex = start + rawText.length
+    }
+
+    if (lastIndex < content.length) {
+        segments.push({
+            displayText: content.slice(lastIndex),
+            rawEnd: content.length,
+            rawStart: lastIndex,
+            type: 'text',
+        })
+    }
+
+    return segments
+}
+
+function buildSegmentParts(segment, matches, activeMatchIndex) {
+    const hasValueRange =
+        typeof segment.valueRawStart === 'number' && typeof segment.valueRawEnd === 'number'
+    const segmentStart = hasValueRange ? segment.valueRawStart : segment.rawStart
+    const segmentEnd = hasValueRange ? segment.valueRawEnd : segment.rawEnd
+    const nextParts = []
+    let cursor = segmentStart
+
+    matches.forEach((match, matchIndex) => {
+        const overlapStart = Math.max(segmentStart, match.start)
+        const overlapEnd = Math.min(segmentEnd, match.end)
+
+        if (overlapStart >= overlapEnd) {
+            return
+        }
+
+        if (cursor < overlapStart) {
+            nextParts.push({
+                isActive: false,
+                isMatch: false,
+                text: segment.displayText.slice(
+                    cursor - segmentStart,
+                    overlapStart - segmentStart
+                ),
+            })
+        }
+
+        nextParts.push({
+            isActive: matchIndex === activeMatchIndex,
+            isMatch: true,
+            matchIndex,
+            text: segment.displayText.slice(
+                overlapStart - segmentStart,
+                overlapEnd - segmentStart
+            ),
+        })
+        cursor = overlapEnd
+    })
+
+    if (cursor < segmentEnd) {
+        nextParts.push({
+            isActive: false,
+            isMatch: false,
+            text: segment.displayText.slice(cursor - segmentStart),
+        })
+    }
+
+    if (nextParts.length === 0) {
+        return [
+            {
+                isActive: false,
+                isMatch: false,
+                text: segment.displayText,
+            },
+        ]
+    }
+
+    return nextParts.filter((part) => part.text !== '')
 }
 
 export function ContentPanel({
@@ -19,12 +127,14 @@ export function ContentPanel({
 }) {
     const lineNumbersRef = useRef(null)
     const editorRef = useRef(null)
+    const readonlyMatchRefs = useRef({})
     const isLocked = activeState?.isLocked ?? true
     const content = activeState?.content || ''
     const lineCount = content.split('\n').length
     const lineNumbers = Array.from({ length: lineCount }, (_value, index) => index + 1)
     const [searchTerm, setSearchTerm] = useState('')
     const [activeMatchIndex, setActiveMatchIndex] = useState(0)
+    const [readonlyCopyBubble, setReadonlyCopyBubble] = useState(null)
     const appliedJumpIdRef = useRef(null)
 
     const matches = useMemo(() => {
@@ -54,9 +164,13 @@ export function ContentPanel({
         return nextMatches
     }, [content, searchTerm])
 
+    const readonlySegments = useMemo(() => parseReadonlySegments(content), [content])
+
     useEffect(() => {
         setSearchTerm('')
         setActiveMatchIndex(0)
+        setReadonlyCopyBubble(null)
+        readonlyMatchRefs.current = {}
     }, [activeFile])
 
     useEffect(() => {
@@ -113,10 +227,43 @@ export function ContentPanel({
         searchTerm,
     ])
 
+    async function handleReadonlyTagClick(segment, event) {
+        if (segment.type === 'link') {
+            await window.localFiles.openLink(segment.value)
+            return
+        }
+
+        await navigator.clipboard.writeText(segment.value)
+        setReadonlyCopyBubble({
+            label: 'Copied',
+            x: event.clientX,
+            y: event.clientY,
+        })
+        window.setTimeout(() => {
+            setReadonlyCopyBubble(null)
+        }, 900)
+    }
+
     function focusMatch(matchIndex) {
         const match = matches[matchIndex]
 
-        if (!match || !editorRef.current) {
+        if (!match) {
+            return
+        }
+
+        if (isLocked) {
+            const matchElement = readonlyMatchRefs.current[matchIndex]
+
+            if (matchElement) {
+                matchElement.scrollIntoView({
+                    block: 'center',
+                })
+            }
+
+            return
+        }
+
+        if (!editorRef.current) {
             return
         }
 
@@ -149,6 +296,59 @@ export function ContentPanel({
         focusMatch(nextIndex)
     }
 
+    function renderReadonlyPart(part, key) {
+        if (!part.isMatch) {
+            return <React.Fragment key={key}>{part.text}</React.Fragment>
+        }
+
+        return (
+            <span
+                key={key}
+                className={
+                    part.isActive
+                        ? 'readonly-search-match is-active'
+                        : 'readonly-search-match'
+                }
+                ref={(element) => {
+                    if (element && part.matchIndex === activeMatchIndex) {
+                        readonlyMatchRefs.current[part.matchIndex] = element
+                    }
+                }}
+            >
+                {part.text}
+            </span>
+        )
+    }
+
+    function renderReadonlySegment(segment, segmentIndex) {
+        const parts = buildSegmentParts(segment, matches, activeMatchIndex)
+
+        if (segment.type === 'text') {
+            return (
+                <React.Fragment key={`segment-${segmentIndex}`}>
+                    {parts.map((part, partIndex) =>
+                        renderReadonlyPart(part, `segment-${segmentIndex}-part-${partIndex}`)
+                    )}
+                </React.Fragment>
+            )
+        }
+
+        return (
+            <button
+                key={`segment-${segmentIndex}`}
+                className={`readonly-token readonly-token-${segment.type}`}
+                onClick={(event) => {
+                    handleReadonlyTagClick(segment, event)
+                }}
+                type="button"
+            >
+                {parts.map((part, partIndex) =>
+                    renderReadonlyPart(part, `segment-${segmentIndex}-part-${partIndex}`)
+                )}
+            </button>
+        )
+    }
+
     return (
         <section className="content-panel">
             <header className="content-header"></header>
@@ -162,10 +362,18 @@ export function ContentPanel({
                         return (
                             <div
                                 key={fileName}
-                                className={fileName === activeFile ? 'content-tab is-active' : 'content-tab'}
+                                className={
+                                    fileName === activeFile
+                                        ? 'content-tab is-active'
+                                        : 'content-tab'
+                                }
                                 role="tab"
                             >
-                                <button className="content-tab-label" onClick={() => onActivateTab(fileName)} type="button">
+                                <button
+                                    className="content-tab-label"
+                                    onClick={() => onActivateTab(fileName)}
+                                    type="button"
+                                >
                                     {formatTabLabel(fileName)}
                                 </button>
                                 <div className="content-tab-actions">
@@ -176,17 +384,31 @@ export function ContentPanel({
                                             onClick={() => onSaveTab(fileName)}
                                             type="button"
                                         >
-                                            <i className="fa-solid fa-floppy-disk" aria-hidden="true" />
+                                            <i
+                                                className="fa-solid fa-floppy-disk"
+                                                aria-hidden="true"
+                                            />
                                         </button>
                                     ) : null}
                                     {fileName === activeFile ? (
                                         <button
-                                            aria-label={tabLocked ? `Unlock ${fileName}` : `Lock ${fileName}`}
+                                            aria-label={
+                                                tabLocked
+                                                    ? `Unlock ${fileName}`
+                                                    : `Lock ${fileName}`
+                                            }
                                             className="content-tab-icon-button"
                                             onClick={() => onToggleTabLock(fileName)}
                                             type="button"
                                         >
-                                            <i aria-hidden="true" className={tabLocked ? 'fa-solid fa-lock' : 'fa-solid fa-unlock'} />
+                                            <i
+                                                aria-hidden="true"
+                                                className={
+                                                    tabLocked
+                                                        ? 'fa-solid fa-lock'
+                                                        : 'fa-solid fa-unlock'
+                                                }
+                                            />
                                         </button>
                                     ) : null}
                                     <button
@@ -245,20 +467,48 @@ export function ContentPanel({
                             </div>
                         ))}
                     </div>
-                    <textarea
-                        ref={editorRef}
-                        className="content-editor"
-                        readOnly={isLocked}
-                        onChange={(event) => onChangeContent(event.target.value)}
-                        onScroll={(event) => {
-                            if (lineNumbersRef.current) {
-                                lineNumbersRef.current.scrollTop =
-                                    event.target.scrollTop
-                            }
-                        }}
-                        spellCheck={false}
-                        value={content}
-                    />
+                    {isLocked ? (
+                        <>
+                            <div
+                                className="content-readonly"
+                                onScroll={(event) => {
+                                    if (lineNumbersRef.current) {
+                                        lineNumbersRef.current.scrollTop =
+                                            event.target.scrollTop
+                                    }
+                                }}
+                            >
+                                {readonlySegments.map((segment, index) =>
+                                    renderReadonlySegment(segment, index)
+                                )}
+                            </div>
+                            {readonlyCopyBubble ? (
+                                <div
+                                    className="readonly-copy-bubble"
+                                    style={{
+                                        left: `${readonlyCopyBubble.x}px`,
+                                        top: `${readonlyCopyBubble.y}px`,
+                                    }}
+                                >
+                                    {readonlyCopyBubble.label}
+                                </div>
+                            ) : null}
+                        </>
+                    ) : (
+                        <textarea
+                            ref={editorRef}
+                            className="content-editor"
+                            onChange={(event) => onChangeContent(event.target.value)}
+                            onScroll={(event) => {
+                                if (lineNumbersRef.current) {
+                                    lineNumbersRef.current.scrollTop =
+                                        event.target.scrollTop
+                                }
+                            }}
+                            spellCheck={false}
+                            value={content}
+                        />
+                    )}
                 </div>
             ) : (
                 <p className="message">No files found in local-data.</p>

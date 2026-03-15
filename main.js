@@ -239,6 +239,29 @@ function openLocalDataTerminal() {
     throw new Error('Opening terminal is only supported on macOS right now')
 }
 
+function normalizeExternalLink(value) {
+    if (typeof value !== 'string' || value.trim() === '') {
+        throw new Error('Invalid link')
+    }
+
+    if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(value)) {
+        return value
+    }
+
+    return `https://${value}`
+}
+
+function openLinkInChrome(value) {
+    const normalizedLink = normalizeExternalLink(value)
+
+    if (process.platform === 'darwin') {
+        execFile('open', ['-a', 'Google Chrome', normalizedLink])
+        return true
+    }
+
+    throw new Error('Opening links in Chrome is only supported on macOS right now')
+}
+
 function createWindow() {
     const { workAreaSize } = screen.getPrimaryDisplay()
     const width = 1500
@@ -295,6 +318,10 @@ ipcMain.handle('local-files:history', (_event, page = 1, limit = 30) => {
 
 ipcMain.handle('local-files:open-terminal', () => {
     return openLocalDataTerminal()
+})
+
+ipcMain.handle('local-files:open-link', (_event, value) => {
+    return openLinkInChrome(value)
 })
 
 ipcMain.handle('local-files:write', (_event, fileName, content) => {
