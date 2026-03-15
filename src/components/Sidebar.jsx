@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 
 export function Sidebar({
     copyBubble,
@@ -26,6 +26,8 @@ export function Sidebar({
     sidebarSearchQuery,
     selectedFile,
 }) {
+    const [hoveredToolbarButton, setHoveredToolbarButton] = useState('')
+
     return (
         <aside className="sidebar">
             <div className="sidebar-toolbar">
@@ -38,6 +40,8 @@ export function Sidebar({
                         }
                         aria-label="Show recent commit history"
                         onClick={onOpenHistory}
+                        onMouseEnter={() => setHoveredToolbarButton('Recent Commits')}
+                        onMouseLeave={() => setHoveredToolbarButton('')}
                         type="button"
                     >
                         <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
@@ -50,6 +54,8 @@ export function Sidebar({
                         }
                         aria-label="Toggle file search"
                         onClick={onToggleSidebarSearch}
+                        onMouseEnter={() => setHoveredToolbarButton('Search Files')}
+                        onMouseLeave={() => setHoveredToolbarButton('')}
                         type="button"
                     >
                         <i className="fa-solid fa-magnifying-glass" aria-hidden="true" />
@@ -58,6 +64,8 @@ export function Sidebar({
                         className="sidebar-add-button"
                         aria-label="Copy open files for ChatGPT"
                         onClick={onCopyOpenFiles}
+                        onMouseEnter={() => setHoveredToolbarButton('Copy Open Files')}
+                        onMouseLeave={() => setHoveredToolbarButton('')}
                         type="button"
                     >
                         <i className="fa-solid fa-copy" aria-hidden="true" />
@@ -66,12 +74,17 @@ export function Sidebar({
                         className="sidebar-add-button"
                         aria-label="Add new file"
                         onClick={onCreateFile}
+                        onMouseEnter={() => setHoveredToolbarButton('Add New File')}
+                        onMouseLeave={() => setHoveredToolbarButton('')}
                         type="button"
                     >
                         <i className="fa-solid fa-file-circle-plus" aria-hidden="true" />
                     </button>
                 </div>
             </div>
+            {hoveredToolbarButton ? (
+                <div className="sidebar-toolbar-tooltip">{hoveredToolbarButton}</div>
+            ) : null}
             {isSidebarSearchOpen ? (
                 <div className="sidebar-search-panel">
                     <div className="sidebar-search">

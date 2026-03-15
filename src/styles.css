@@ -125,6 +125,21 @@ body {
   justify-content: flex-end;
 }
 
+.sidebar-toolbar-tooltip {
+  position: absolute;
+  top: 66px;
+  right: 18px;
+  padding: 6px 10px;
+  background: #3a1836;
+  color: #ffffff;
+  font-size: 0.78rem;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 10px 22px var(--shadow);
+  pointer-events: none;
+  z-index: 5;
+}
+
 .sidebar-add-button {
   border: 0;
   border-radius: 8px;
