@@ -16,7 +16,7 @@
   },
   "build": {
     "appId": "com.example.electronlocalfileviewer2026",
-    "productName": "HelloWorldElectron",
+    "productName": "ImpossibluEditor",
     "icon": "src/assets/icon.png",
     "files": [
       "main.js",

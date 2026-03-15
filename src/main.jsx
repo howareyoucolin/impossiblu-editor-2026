@@ -693,7 +693,7 @@ function App() {
                                 A small experimental file-browser app built to explore
                                 what Codex can do in a real workflow.
                             </p>
-                            <p className="about-modal-version">Version 0.0.1</p>
+                            <p className="about-modal-version">Version 1.0.0</p>
                         </div>
                     </div>
                 </div>

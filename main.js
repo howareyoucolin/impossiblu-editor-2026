@@ -3,10 +3,18 @@ const { execFile, execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
-const dataDirectory = path.join(__dirname, 'local-data')
 const iconPath = path.join(__dirname, 'src', 'assets', 'icon.png')
 
+function getDataDirectory() {
+    if (app.isPackaged) {
+        return path.join(app.getPath('userData'), 'local-data')
+    }
+
+    return path.join(__dirname, 'local-data')
+}
+
 function hasDataDirectory() {
+    const dataDirectory = getDataDirectory()
     return fs.existsSync(dataDirectory) && fs.statSync(dataDirectory).isDirectory()
 }
 
@@ -23,6 +31,7 @@ function formatCommitTimestamp(date) {
 }
 
 function commitAllChanges(action, fileName) {
+    const dataDirectory = getDataDirectory()
     const gitOptions = { cwd: dataDirectory, encoding: 'utf8' }
 
     execFileSync('git', ['add', '-A'], gitOptions)
@@ -38,6 +47,7 @@ function commitAllChanges(action, fileName) {
 }
 
 function commitWithMessage(message) {
+    const dataDirectory = getDataDirectory()
     const gitOptions = { cwd: dataDirectory, encoding: 'utf8' }
 
     execFileSync('git', ['add', '-A'], gitOptions)
@@ -52,6 +62,7 @@ function commitWithMessage(message) {
 }
 
 function setupDataDirectory() {
+    const dataDirectory = getDataDirectory()
     fs.mkdirSync(dataDirectory, { recursive: true })
     fs.chmodSync(dataDirectory, 0o777)
 
@@ -61,6 +72,7 @@ function setupDataDirectory() {
 }
 
 function resolveLocalFilePath(fileName) {
+    const dataDirectory = getDataDirectory()
     if (
         typeof fileName !== 'string' ||
         fileName.trim() === '' ||
@@ -80,6 +92,7 @@ function resolveLocalFilePath(fileName) {
 }
 
 function listLocalFiles() {
+    const dataDirectory = getDataDirectory()
     if (!fs.existsSync(dataDirectory)) {
         return []
     }
@@ -143,6 +156,7 @@ function searchLocalFiles(query) {
 }
 
 function getRecentCommitMessages(page = 1, limit = 30) {
+    const dataDirectory = getDataDirectory()
     if (!fs.existsSync(path.join(dataDirectory, '.git'))) {
         return {
             messages: [],
@@ -185,6 +199,7 @@ function writeLocalFile(fileName, content) {
 }
 
 function createLocalFile(fileName) {
+    const dataDirectory = getDataDirectory()
     const filePath = resolveLocalFilePath(fileName)
 
     fs.mkdirSync(dataDirectory, { recursive: true })
@@ -222,6 +237,7 @@ function renameLocalFile(oldFileName, newFileName) {
 }
 
 function openLocalDataTerminal() {
+    const dataDirectory = getDataDirectory()
     if (process.platform === 'darwin') {
         execFile('osascript', [
             '-e',
