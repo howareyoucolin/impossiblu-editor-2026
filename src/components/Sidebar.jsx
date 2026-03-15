@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 
 export function Sidebar({
+    isAboutOpen,
     deleteUnlockedFile,
     editingFileName,
     files,
@@ -11,9 +12,11 @@ export function Sidebar({
     onChangeSidebarSearch,
     onOpenHistory,
     onOpenUsageLookup,
+    onOpenAbout,
     onCopyOpenFiles,
     onCreateFile,
     onDeleteFile,
+    openFileCount,
     onSelectSearchResult,
     onRenameCancel,
     onRenameChange,
@@ -33,6 +36,20 @@ export function Sidebar({
         <aside className="sidebar">
             <div className="sidebar-toolbar">
                 <div className="sidebar-toolbar-actions">
+                    <button
+                        className={
+                            isAboutOpen
+                                ? 'sidebar-add-button is-active'
+                                : 'sidebar-add-button'
+                        }
+                        aria-label="Show app info"
+                        onClick={onOpenAbout}
+                        onMouseEnter={() => setHoveredToolbarButton('About')}
+                        onMouseLeave={() => setHoveredToolbarButton('')}
+                        type="button"
+                    >
+                        <i className="fa-solid fa-circle-info" aria-hidden="true" />
+                    </button>
                     <button
                         className={
                             isUsageLookupOpen
@@ -78,6 +95,7 @@ export function Sidebar({
                     <button
                         className="sidebar-add-button"
                         aria-label="Copy open files for ChatGPT"
+                        disabled={openFileCount === 0}
                         onClick={onCopyOpenFiles}
                         onMouseEnter={() => setHoveredToolbarButton('Copy Open Files')}
                         onMouseLeave={() => setHoveredToolbarButton('')}

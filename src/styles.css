@@ -119,8 +119,9 @@ body {
 }
 
 .sidebar-toolbar-actions {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(6, 32px);
+  gap: 6px;
   margin-left: auto;
   justify-content: flex-end;
 }
@@ -143,14 +144,20 @@ body {
 .sidebar-add-button {
   border: 0;
   border-radius: 8px;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   font: inherit;
   background: var(--bg-elevated);
   color: #ffffff;
   cursor: pointer;
+}
+
+.sidebar-add-button:disabled {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.4);
+  cursor: not-allowed;
 }
 
 .sidebar-add-button.is-active {
@@ -804,6 +811,42 @@ body {
 
 .usage-modal {
   width: min(640px, calc(100vw - 48px));
+}
+
+.about-modal {
+  width: min(420px, calc(100vw - 48px));
+}
+
+.about-modal-content {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+.about-modal-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 16px;
+}
+
+.about-modal-title {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--text-main);
+}
+
+.about-modal-description {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.about-modal-version {
+  margin: 0;
+  color: #ffd66d;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.88rem;
 }
 
 .usage-modal-list {

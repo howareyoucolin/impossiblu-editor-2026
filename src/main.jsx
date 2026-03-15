@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
+import icon from './assets/icon.png'
 import { ContentPanel } from './components/ContentPanel'
 import { Sidebar } from './components/Sidebar'
 import { Setup } from './components/Setup'
@@ -42,13 +43,36 @@ function getNextUntitledFileName(fileNames) {
     return `${baseName}-${index}${extension}`
 }
 
+function formatContentForExport(content) {
+    return content.replace(/\[(copy|pass|link)=([^\]]*)\]/g, (_match, type, value) => {
+        if (type === 'pass') {
+            return '*'.repeat(value.length)
+        }
+
+        return value
+    })
+}
+
 function buildCombinedOpenTabsContent(openTabs, editorStates) {
-    return openTabs
+    const promptHeader = [
+        'The content below contains file data from multiple files.',
+        'Your task is to help the user search this data for keywords, phrases, and related content.',
+        'When the user asks a question, return the matching or most relevant results with the file name and line number for each result.',
+        'If multiple results are relevant, list all of them clearly.',
+        'After receiving this message, reply only with: "What would you like to search?"',
+        '',
+    ].join('\n')
+
+    const fileContent = openTabs
         .map((fileName) => {
-            const fileContent = editorStates[fileName]?.content || ''
+            const fileContent = formatContentForExport(
+                editorStates[fileName]?.content || ''
+            )
             return `===== ${fileName} =====\n${fileContent}`
         })
         .join('\n\n')
+
+    return `${promptHeader}${fileContent}`
 }
 
 async function searchAcrossFiles(query) {
@@ -84,6 +108,7 @@ function App() {
     const [historyPage, setHistoryPage] = useState(1)
     const [historyTotal, setHistoryTotal] = useState(0)
     const [isCopyPreviewOpen, setIsCopyPreviewOpen] = useState(false)
+    const [isAboutOpen, setIsAboutOpen] = useState(false)
 
     const activeState = activeFile
         ? editorStates[activeFile] || getDefaultEditorState()
@@ -584,11 +609,13 @@ function App() {
                 deleteUnlockedFile={deleteUnlockedFile}
                 editingFileName={editingFileName}
                 files={files}
+                isAboutOpen={isAboutOpen}
                 isHistoryOpen={isHistoryOpen}
                 isUsageLookupOpen={isUsageLookupOpen}
                 isSidebarSearchOpen={isSidebarSearchOpen}
                 isSidebarSearchLoading={isSidebarSearchLoading}
                 onChangeSidebarSearch={setSidebarSearchQuery}
+                onOpenAbout={() => setIsAboutOpen(true)}
                 onOpenHistory={openHistoryModal}
                 onOpenUsageLookup={() => setIsUsageLookupOpen(true)}
                 onCopyOpenFiles={async () => {
@@ -597,6 +624,7 @@ function App() {
                 }}
                 onCreateFile={handleCreateFile}
                 onDeleteFile={handleDeleteFile}
+                openFileCount={openTabs.length}
                 onSelectSearchResult={(result) => {
                     setContentSearchJump({
                         fileName: result.fileName,
@@ -637,6 +665,39 @@ function App() {
                 sidebarSearchQuery={sidebarSearchQuery}
                 selectedFile={activeFile}
             />
+            {isAboutOpen ? (
+                <div className="history-modal-backdrop" role="presentation">
+                    <div
+                        aria-labelledby="about-modal-title"
+                        aria-modal="true"
+                        className="history-modal about-modal"
+                        role="dialog"
+                    >
+                        <div className="history-modal-header">
+                            <h2 id="about-modal-title">About</h2>
+                            <div className="history-modal-header-actions">
+                                <button
+                                    aria-label="Close app info"
+                                    className="history-modal-close"
+                                    onClick={() => setIsAboutOpen(false)}
+                                    type="button"
+                                >
+                                    x
+                                </button>
+                            </div>
+                        </div>
+                        <div className="about-modal-content">
+                            <img alt="App icon" className="about-modal-logo" src={icon} />
+                            <p className="about-modal-title">Developed by Colin Zhao</p>
+                            <p className="about-modal-description">
+                                A small experimental file-browser app built to explore
+                                what Codex can do in a real workflow.
+                            </p>
+                            <p className="about-modal-version">Version 0.0.1</p>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
             {isCopyPreviewOpen ? (
                 <div className="history-modal-backdrop" role="presentation">
                     <div
