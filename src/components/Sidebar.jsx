@@ -5,9 +5,11 @@ export function Sidebar({
     deleteUnlockedFile,
     editingFileName,
     files,
+    isHistoryOpen,
     isSidebarSearchOpen,
     isSidebarSearchLoading,
     onChangeSidebarSearch,
+    onOpenHistory,
     onCopyOpenFiles,
     onCreateFile,
     onDeleteFile,
@@ -28,6 +30,18 @@ export function Sidebar({
         <aside className="sidebar">
             <div className="sidebar-toolbar">
                 <div className="sidebar-toolbar-actions">
+                    <button
+                        className={
+                            isHistoryOpen
+                                ? 'sidebar-add-button is-active'
+                                : 'sidebar-add-button'
+                        }
+                        aria-label="Show recent commit history"
+                        onClick={onOpenHistory}
+                        type="button"
+                    >
+                        <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
+                    </button>
                     <button
                         className={
                             isSidebarSearchOpen

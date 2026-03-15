@@ -60,6 +60,7 @@ async function searchAcrossFiles(query) {
 }
 
 function App() {
+    const historyPageSize = 30
     const [files, setFiles] = useState([])
     const [activeFile, setActiveFile] = useState('')
     const [openTabs, setOpenTabs] = useState([])
@@ -76,6 +77,12 @@ function App() {
     const [sidebarSearchQuery, setSidebarSearchQuery] = useState('')
     const [sidebarSearchResults, setSidebarSearchResults] = useState([])
     const [contentSearchJump, setContentSearchJump] = useState(null)
+    const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+    const [historyMessages, setHistoryMessages] = useState([])
+    const [historyError, setHistoryError] = useState('')
+    const [historyActionError, setHistoryActionError] = useState('')
+    const [historyPage, setHistoryPage] = useState(1)
+    const [historyTotal, setHistoryTotal] = useState(0)
 
     const activeState = activeFile
         ? editorStates[activeFile] || getDefaultEditorState()
@@ -98,6 +105,47 @@ function App() {
             setSidebarSearchResults([])
         } finally {
             setIsSidebarSearchLoading(false)
+        }
+    }
+
+    async function loadHistoryPage(page) {
+        try {
+            const historyResult = await window.localFiles.history(page, historyPageSize)
+
+            if (Array.isArray(historyResult)) {
+                setHistoryMessages(historyResult)
+                setHistoryTotal(historyResult.length)
+            } else {
+                setHistoryMessages(historyResult.messages || [])
+                setHistoryTotal(historyResult.total || 0)
+            }
+
+            setHistoryError('')
+        } catch (error) {
+            setHistoryMessages([])
+            setHistoryTotal(0)
+            setHistoryError('Failed to load commit history.')
+        }
+    }
+
+    async function openHistoryModal() {
+        const firstPage = 1
+        setHistoryPage(firstPage)
+        await loadHistoryPage(firstPage)
+        setIsHistoryOpen(true)
+    }
+
+    async function handleHistoryPageChange(nextPage) {
+        setHistoryPage(nextPage)
+        await loadHistoryPage(nextPage)
+    }
+
+    async function handleOpenHistoryTerminal() {
+        try {
+            await window.localFiles.openTerminal()
+            setHistoryActionError('')
+        } catch (error) {
+            setHistoryActionError('Failed to open Terminal for local-data.')
         }
     }
 
@@ -531,15 +579,20 @@ function App() {
         )
     }
 
+    const historyTotalPages = Math.max(1, Math.ceil(historyTotal / historyPageSize))
+    const historyStartIndex = (historyPage - 1) * historyPageSize
+
     return (
         <main className="app-shell">
             <Sidebar
                 deleteUnlockedFile={deleteUnlockedFile}
                 editingFileName={editingFileName}
                 files={files}
+                isHistoryOpen={isHistoryOpen}
                 isSidebarSearchOpen={isSidebarSearchOpen}
                 isSidebarSearchLoading={isSidebarSearchLoading}
                 onChangeSidebarSearch={setSidebarSearchQuery}
+                onOpenHistory={openHistoryModal}
                 copyBubble={copyBubble}
                 onCopyOpenFiles={async (event) => {
                     await navigator.clipboard.writeText(combinedOpenTabsContent)
@@ -594,6 +647,97 @@ function App() {
                 sidebarSearchQuery={sidebarSearchQuery}
                 selectedFile={activeFile}
             />
+            {isHistoryOpen ? (
+                <div className="history-modal-backdrop" role="presentation">
+                    <div
+                        aria-labelledby="history-modal-title"
+                        aria-modal="true"
+                        className="history-modal"
+                        role="dialog"
+                    >
+                        <div className="history-modal-header">
+                            <h2 id="history-modal-title">Recent Commits</h2>
+                            <div className="history-modal-header-actions">
+                                <button
+                                    aria-label="Open Terminal in local-data"
+                                    className="history-modal-open-terminal"
+                                    onClick={handleOpenHistoryTerminal}
+                                    type="button"
+                                >
+                                    <i
+                                        className="fa-solid fa-terminal"
+                                        aria-hidden="true"
+                                    />
+                                </button>
+                                <button
+                                    aria-label="Close commit history"
+                                    className="history-modal-close"
+                                    onClick={() => {
+                                        setHistoryActionError('')
+                                        setIsHistoryOpen(false)
+                                    }}
+                                    type="button"
+                                >
+                                    x
+                                </button>
+                            </div>
+                        </div>
+                        {historyActionError ? (
+                            <p className="history-modal-empty">{historyActionError}</p>
+                        ) : null}
+                        {historyError ? (
+                            <p className="history-modal-empty">{historyError}</p>
+                        ) : null}
+                        {!historyError && historyMessages.length === 0 ? (
+                            <p className="history-modal-empty">No commits yet.</p>
+                        ) : null}
+                        {!historyError && historyMessages.length > 0 ? (
+                            <>
+                                <div className="history-modal-list">
+                                    {historyMessages.map((message, index) => (
+                                        <div
+                                            key={`${message}-${historyStartIndex + index}`}
+                                            className="history-modal-item"
+                                        >
+                                            <span className="history-modal-index">
+                                                {historyStartIndex + index + 1}.
+                                            </span>
+                                            <span className="history-modal-message">
+                                                {message}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="history-modal-pagination">
+                                    <button
+                                        className="history-modal-page-button"
+                                        disabled={historyPage <= 1}
+                                        onClick={() =>
+                                            handleHistoryPageChange(historyPage - 1)
+                                        }
+                                        type="button"
+                                    >
+                                        Prev
+                                    </button>
+                                    <span className="history-modal-page-label">
+                                        {historyPage} / {historyTotalPages}
+                                    </span>
+                                    <button
+                                        className="history-modal-page-button"
+                                        disabled={historyPage >= historyTotalPages}
+                                        onClick={() =>
+                                            handleHistoryPageChange(historyPage + 1)
+                                        }
+                                        type="button"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </>
+                        ) : null}
+                    </div>
+                </div>
+            ) : null}
             <ContentPanel
                 activeFile={activeFile}
                 activeState={activeState}

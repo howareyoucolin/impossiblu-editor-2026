@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('localFiles', {
     list: () => ipcRenderer.invoke('local-files:list'),
     read: (fileName) => ipcRenderer.invoke('local-files:read', fileName),
     search: (query) => ipcRenderer.invoke('local-files:search', query),
+    history: (page, limit) => ipcRenderer.invoke('local-files:history', page, limit),
+    openTerminal: () => ipcRenderer.invoke('local-files:open-terminal'),
     setup: () => ipcRenderer.invoke('local-files:setup'),
     write: (fileName, content) =>
         ipcRenderer.invoke('local-files:write', fileName, content),

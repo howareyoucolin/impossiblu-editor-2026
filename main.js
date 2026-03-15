@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, screen } = require('electron')
-const { execFileSync } = require('child_process')
+const { execFile, execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
@@ -142,6 +142,43 @@ function searchLocalFiles(query) {
     })
 }
 
+function getRecentCommitMessages(page = 1, limit = 30) {
+    if (!fs.existsSync(path.join(dataDirectory, '.git'))) {
+        return {
+            messages: [],
+            total: 0,
+        }
+    }
+
+    const totalOutput = execFileSync('git', ['rev-list', '--count', 'HEAD'], {
+        cwd: dataDirectory,
+        encoding: 'utf8',
+    }).trim()
+    const total = Number.parseInt(totalOutput, 10) || 0
+
+    if (total === 0) {
+        return {
+            messages: [],
+            total: 0,
+        }
+    }
+
+    const safePage = Math.max(1, Number.parseInt(page, 10) || 1)
+    const safeLimit = Math.max(1, Number.parseInt(limit, 10) || 30)
+    const skip = (safePage - 1) * safeLimit
+
+    const output = execFileSync(
+        'git',
+        ['log', `-${safeLimit}`, `--skip=${skip}`, '--pretty=format:%s'],
+        { cwd: dataDirectory, encoding: 'utf8' }
+    ).trim()
+
+    return {
+        messages: output ? output.split('\n') : [],
+        total,
+    }
+}
+
 function writeLocalFile(fileName, content) {
     const filePath = resolveLocalFilePath(fileName)
     fs.writeFileSync(filePath, content, 'utf8')
@@ -182,6 +219,24 @@ function renameLocalFile(oldFileName, newFileName) {
     }
 
     fs.renameSync(oldFilePath, newFilePath)
+}
+
+function openLocalDataTerminal() {
+    if (process.platform === 'darwin') {
+        execFile('osascript', [
+            '-e',
+            'tell application "Terminal"',
+            '-e',
+            'activate',
+            '-e',
+            `do script "cd ${dataDirectory.replace(/"/g, '\\"')}"`,
+            '-e',
+            'end tell',
+        ])
+        return true
+    }
+
+    throw new Error('Opening terminal is only supported on macOS right now')
 }
 
 function createWindow() {
@@ -232,6 +287,14 @@ ipcMain.handle('local-files:read', (_event, fileName) => {
 
 ipcMain.handle('local-files:search', (_event, query) => {
     return searchLocalFiles(query)
+})
+
+ipcMain.handle('local-files:history', (_event, page = 1, limit = 30) => {
+    return getRecentCommitMessages(page, limit)
+})
+
+ipcMain.handle('local-files:open-terminal', () => {
+    return openLocalDataTerminal()
 })
 
 ipcMain.handle('local-files:write', (_event, fileName, content) => {
