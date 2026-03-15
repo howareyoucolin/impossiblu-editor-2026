@@ -51,6 +51,14 @@ function buildCombinedOpenTabsContent(openTabs, editorStates) {
         .join('\n\n')
 }
 
+async function searchAcrossFiles(query) {
+    if (query.trim() === '') {
+        return []
+    }
+
+    return window.localFiles.search(query)
+}
+
 function App() {
     const [files, setFiles] = useState([])
     const [activeFile, setActiveFile] = useState('')
@@ -63,13 +71,47 @@ function App() {
     const [isSettingUp, setIsSettingUp] = useState(false)
     const [renameDraft, setRenameDraft] = useState('')
     const [setupError, setSetupError] = useState('')
+    const [isSidebarSearchOpen, setIsSidebarSearchOpen] = useState(false)
+    const [isSidebarSearchLoading, setIsSidebarSearchLoading] = useState(false)
+    const [sidebarSearchQuery, setSidebarSearchQuery] = useState('')
+    const [sidebarSearchResults, setSidebarSearchResults] = useState([])
+    const [contentSearchJump, setContentSearchJump] = useState(null)
 
     const activeState = activeFile
         ? editorStates[activeFile] || getDefaultEditorState()
         : getDefaultEditorState()
     const combinedOpenTabsContent = buildCombinedOpenTabsContent(openTabs, editorStates)
 
+    async function refreshSidebarSearch(query = sidebarSearchQuery) {
+        if (!isSidebarSearchOpen || query.trim() === '') {
+            setSidebarSearchResults([])
+            setIsSidebarSearchLoading(false)
+            return
+        }
+
+        setIsSidebarSearchLoading(true)
+
+        try {
+            const nextResults = await searchAcrossFiles(query)
+            setSidebarSearchResults(nextResults)
+        } catch (error) {
+            setSidebarSearchResults([])
+        } finally {
+            setIsSidebarSearchLoading(false)
+        }
+    }
+
     function openFile(fileName) {
+        if (activeFile && activeFile !== fileName) {
+            setEditorStates((currentStates) => ({
+                ...currentStates,
+                [activeFile]: {
+                    ...(currentStates[activeFile] || getDefaultEditorState()),
+                    isLocked: true,
+                },
+            }))
+        }
+
         setActiveFile(fileName)
         setOpenTabs((currentTabs) =>
             currentTabs.includes(fileName) ? currentTabs : [...currentTabs, fileName]
@@ -127,7 +169,9 @@ function App() {
                     setCopyBubble(null)
                     setDeleteUnlockedFile('')
                     setEditingFileName('')
+                    setIsSidebarSearchOpen(false)
                     setRenameDraft('')
+                    setSidebarSearchQuery('')
                 }
             } catch (loadError) {
                 if (!cancelled) {
@@ -213,8 +257,54 @@ function App() {
         }
     }, [activeFile, editorStates])
 
+    useEffect(() => {
+        if (!isSidebarSearchOpen) {
+            setSidebarSearchResults([])
+            setIsSidebarSearchLoading(false)
+            return undefined
+        }
+
+        if (sidebarSearchQuery.trim() === '') {
+            setSidebarSearchResults([])
+            setIsSidebarSearchLoading(false)
+            return undefined
+        }
+
+        let cancelled = false
+
+        async function loadSidebarSearchResults() {
+            setIsSidebarSearchLoading(true)
+
+            try {
+                const nextResults = await searchAcrossFiles(sidebarSearchQuery)
+
+                if (!cancelled) {
+                    setSidebarSearchResults(nextResults)
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setSidebarSearchResults([])
+                }
+            } finally {
+                if (!cancelled) {
+                    setIsSidebarSearchLoading(false)
+                }
+            }
+        }
+
+        loadSidebarSearchResults()
+
+        return () => {
+            cancelled = true
+        }
+    }, [isSidebarSearchOpen, sidebarSearchQuery])
+
     async function handleSaveTab(fileName) {
         const nextState = editorStates[fileName] || getDefaultEditorState()
+
+        if (!nextState.isDirty) {
+            return
+        }
 
         try {
             await window.localFiles.write(fileName, nextState.content)
@@ -228,6 +318,7 @@ function App() {
                     status: 'Saved',
                 },
             }))
+            await refreshSidebarSearch()
         } catch (saveError) {
             setEditorStates((currentStates) => ({
                 ...currentStates,
@@ -266,7 +357,9 @@ function App() {
             setDeleteUnlockedFile('')
             setEditingFileName('')
             setCopyBubble(null)
+            setIsSidebarSearchOpen(false)
             setRenameDraft('')
+            setSidebarSearchQuery('')
             setEditorStates((currentStates) => ({
                 ...currentStates,
                 [fileName]: {
@@ -275,6 +368,7 @@ function App() {
                     status: `Created ${fileName}`,
                 },
             }))
+            await refreshSidebarSearch()
             await refreshFiles(fileName)
         } catch (createError) {
             setEditorStates((currentStates) => ({
@@ -304,7 +398,9 @@ function App() {
             setDeleteUnlockedFile('')
             setEditingFileName('')
             setCopyBubble(null)
+            setIsSidebarSearchOpen(false)
             setRenameDraft('')
+            setSidebarSearchQuery('')
             setEditorStates((currentStates) => {
                 const nextStates = { ...currentStates }
                 delete nextStates[fileName]
@@ -313,6 +409,10 @@ function App() {
             setOpenTabs((currentTabs) =>
                 currentTabs.filter((tabFileName) => tabFileName !== fileName)
             )
+            setSidebarSearchResults((currentResults) =>
+                currentResults.filter((result) => result.fileName !== fileName)
+            )
+            await refreshSidebarSearch()
             await refreshFiles(getNextSelectedFile(files, fileName))
         } catch (deleteError) {
             setEditorStates((currentStates) => ({
@@ -363,6 +463,14 @@ function App() {
                 delete nextStates[oldFileName]
                 return nextStates
             })
+            setSidebarSearchResults((currentResults) =>
+                currentResults.map((result) =>
+                    result.fileName === oldFileName
+                        ? { ...result, fileName: nextFileName }
+                        : result
+                )
+            )
+            await refreshSidebarSearch()
 
             if (activeFile === oldFileName) {
                 setActiveFile(nextFileName)
@@ -429,6 +537,9 @@ function App() {
                 deleteUnlockedFile={deleteUnlockedFile}
                 editingFileName={editingFileName}
                 files={files}
+                isSidebarSearchOpen={isSidebarSearchOpen}
+                isSidebarSearchLoading={isSidebarSearchLoading}
+                onChangeSidebarSearch={setSidebarSearchQuery}
                 copyBubble={copyBubble}
                 onCopyOpenFiles={async (event) => {
                     await navigator.clipboard.writeText(combinedOpenTabsContent)
@@ -443,6 +554,16 @@ function App() {
                 }}
                 onCreateFile={handleCreateFile}
                 onDeleteFile={handleDeleteFile}
+                onSelectSearchResult={(result) => {
+                    setContentSearchJump({
+                        fileName: result.fileName,
+                        id: `${result.fileName}:${result.lineNumber}:${result.matchStart}:${Date.now()}`,
+                        matchEnd: result.matchEnd,
+                        matchStart: result.matchStart,
+                        query: sidebarSearchQuery,
+                    })
+                    openFile(result.fileName)
+                }}
                 onRenameCancel={() => {
                     setEditingFileName('')
                     setRenameDraft('')
@@ -458,18 +579,31 @@ function App() {
                     setRenameDraft(fileName)
                 }}
                 onSelectFile={openFile}
+                onToggleSidebarSearch={() => {
+                    setIsSidebarSearchOpen((current) => !current)
+                    setSidebarSearchQuery('')
+                    setSidebarSearchResults([])
+                }}
                 onToggleDeleteLock={(fileName) =>
                     setDeleteUnlockedFile((current) =>
                         current === fileName ? '' : fileName
                     )
                 }
                 renameDraft={renameDraft}
+                searchResults={sidebarSearchResults}
+                sidebarSearchQuery={sidebarSearchQuery}
                 selectedFile={activeFile}
             />
             <ContentPanel
                 activeFile={activeFile}
                 activeState={activeState}
-                onActivateTab={setActiveFile}
+                externalSearchJump={contentSearchJump}
+                onActivateTab={openFile}
+                onConsumeSearchJump={(jumpId) => {
+                    setContentSearchJump((currentJump) =>
+                        currentJump?.id === jumpId ? null : currentJump
+                    )
+                }}
                 onCloseTab={handleCloseTab}
                 onChangeContent={(nextContent) => {
                     setEditorStates((currentStates) => ({

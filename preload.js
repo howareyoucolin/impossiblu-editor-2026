@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('localFiles', {
     exists: () => ipcRenderer.invoke('local-files:exists'),
     list: () => ipcRenderer.invoke('local-files:list'),
     read: (fileName) => ipcRenderer.invoke('local-files:read', fileName),
+    search: (query) => ipcRenderer.invoke('local-files:search', query),
     setup: () => ipcRenderer.invoke('local-files:setup'),
     write: (fileName, content) =>
         ipcRenderer.invoke('local-files:write', fileName, content),

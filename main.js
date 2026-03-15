@@ -101,6 +101,47 @@ function readLocalFile(fileName) {
     return fs.readFileSync(filePath, 'utf8')
 }
 
+function searchLocalFiles(query) {
+    if (typeof query !== 'string' || query.trim() === '') {
+        return []
+    }
+
+    const normalizedQuery = query.toLowerCase()
+
+    return listLocalFiles().flatMap((fileName) => {
+        const content = readLocalFile(fileName)
+        const lines = content.split(/\r?\n/)
+        let fileOffset = 0
+
+        return lines.flatMap((lineText, index) => {
+            const lineMatches = []
+            const normalizedLine = lineText.toLowerCase()
+            let searchStart = 0
+
+            while (searchStart < normalizedLine.length) {
+                const matchIndex = normalizedLine.indexOf(normalizedQuery, searchStart)
+
+                if (matchIndex === -1) {
+                    break
+                }
+
+                lineMatches.push({
+                    fileName,
+                    lineNumber: index + 1,
+                    lineText,
+                    matchStart: fileOffset + matchIndex,
+                    matchEnd: fileOffset + matchIndex + query.length,
+                })
+                searchStart = matchIndex + normalizedQuery.length
+            }
+
+            fileOffset += lineText.length + 1
+
+            return lineMatches
+        })
+    })
+}
+
 function writeLocalFile(fileName, content) {
     const filePath = resolveLocalFilePath(fileName)
     fs.writeFileSync(filePath, content, 'utf8')
@@ -187,6 +228,10 @@ ipcMain.handle('local-files:setup', () => {
 
 ipcMain.handle('local-files:read', (_event, fileName) => {
     return readLocalFile(fileName)
+})
+
+ipcMain.handle('local-files:search', (_event, query) => {
+    return searchLocalFiles(query)
 })
 
 ipcMain.handle('local-files:write', (_event, fileName, content) => {

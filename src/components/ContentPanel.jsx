@@ -7,7 +7,9 @@ function formatTabLabel(fileName) {
 export function ContentPanel({
     activeFile,
     activeState,
+    externalSearchJump,
     onActivateTab,
+    onConsumeSearchJump,
     onCloseTab,
     onSaveTab,
     onToggleTabLock,
@@ -23,6 +25,7 @@ export function ContentPanel({
     const lineNumbers = Array.from({ length: lineCount }, (_value, index) => index + 1)
     const [searchTerm, setSearchTerm] = useState('')
     const [activeMatchIndex, setActiveMatchIndex] = useState(0)
+    const appliedJumpIdRef = useRef(null)
 
     const matches = useMemo(() => {
         if (!searchTerm) {
@@ -57,6 +60,18 @@ export function ContentPanel({
     }, [activeFile])
 
     useEffect(() => {
+        if (
+            !externalSearchJump ||
+            externalSearchJump.fileName !== activeFile ||
+            appliedJumpIdRef.current === externalSearchJump.id
+        ) {
+            return
+        }
+
+        setSearchTerm(externalSearchJump.query)
+    }, [activeFile, externalSearchJump])
+
+    useEffect(() => {
         if (matches.length === 0) {
             setActiveMatchIndex(0)
             return
@@ -67,6 +82,37 @@ export function ContentPanel({
         }
     }, [activeMatchIndex, matches])
 
+    useEffect(() => {
+        if (
+            !externalSearchJump ||
+            externalSearchJump.fileName !== activeFile ||
+            externalSearchJump.query !== searchTerm ||
+            matches.length === 0 ||
+            appliedJumpIdRef.current === externalSearchJump.id
+        ) {
+            return
+        }
+
+        const targetMatchIndex = matches.findIndex(
+            (match) =>
+                match.start === externalSearchJump.matchStart &&
+                match.end === externalSearchJump.matchEnd
+        )
+
+        const nextMatchIndex = targetMatchIndex >= 0 ? targetMatchIndex : 0
+
+        setActiveMatchIndex(nextMatchIndex)
+        focusMatch(nextMatchIndex)
+        appliedJumpIdRef.current = externalSearchJump.id
+        onConsumeSearchJump(externalSearchJump.id)
+    }, [
+        activeFile,
+        externalSearchJump,
+        matches,
+        onConsumeSearchJump,
+        searchTerm,
+    ])
+
     function focusMatch(matchIndex) {
         const match = matches[matchIndex]
 
@@ -74,6 +120,17 @@ export function ContentPanel({
             return
         }
 
+        const textBeforeMatch = content.slice(0, match.start)
+        const lineIndex = textBeforeMatch.split('\n').length - 1
+        const computedStyle = window.getComputedStyle(editorRef.current)
+        const lineHeight = Number.parseFloat(computedStyle.lineHeight) || 18
+        const paddingTop = Number.parseFloat(computedStyle.paddingTop) || 0
+        const targetScrollTop = Math.max(
+            lineIndex * lineHeight - editorRef.current.clientHeight / 2 + lineHeight,
+            0
+        )
+
+        editorRef.current.scrollTop = targetScrollTop + paddingTop
         editorRef.current.focus()
         editorRef.current.setSelectionRange(match.start, match.end)
     }
@@ -112,23 +169,26 @@ export function ContentPanel({
                                     {formatTabLabel(fileName)}
                                 </button>
                                 <div className="content-tab-actions">
-                                    <button
-                                        aria-label={`Save ${fileName}`}
-                                        className="content-tab-icon-button"
-                                        disabled={tabLocked || !tabDirty}
-                                        onClick={() => onSaveTab(fileName)}
-                                        type="button"
-                                    >
-                                        <i className="fa-solid fa-floppy-disk" aria-hidden="true" />
-                                    </button>
-                                    <button
-                                        aria-label={tabLocked ? `Unlock ${fileName}` : `Lock ${fileName}`}
-                                        className="content-tab-icon-button"
-                                        onClick={() => onToggleTabLock(fileName)}
-                                        type="button"
-                                    >
-                                        <i aria-hidden="true" className={tabLocked ? 'fa-solid fa-lock' : 'fa-solid fa-unlock'} />
-                                    </button>
+                                    {tabDirty ? (
+                                        <button
+                                            aria-label={`Save ${fileName}`}
+                                            className="content-tab-icon-button"
+                                            onClick={() => onSaveTab(fileName)}
+                                            type="button"
+                                        >
+                                            <i className="fa-solid fa-floppy-disk" aria-hidden="true" />
+                                        </button>
+                                    ) : null}
+                                    {fileName === activeFile ? (
+                                        <button
+                                            aria-label={tabLocked ? `Unlock ${fileName}` : `Lock ${fileName}`}
+                                            className="content-tab-icon-button"
+                                            onClick={() => onToggleTabLock(fileName)}
+                                            type="button"
+                                        >
+                                            <i aria-hidden="true" className={tabLocked ? 'fa-solid fa-lock' : 'fa-solid fa-unlock'} />
+                                        </button>
+                                    ) : null}
                                     <button
                                         aria-label={`Close ${fileName}`}
                                         className="content-tab-icon-button"

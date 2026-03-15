@@ -113,7 +113,7 @@ body {
 .sidebar-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -121,6 +121,8 @@ body {
 .sidebar-toolbar-actions {
   display: flex;
   gap: 8px;
+  margin-left: auto;
+  justify-content: flex-end;
 }
 
 .sidebar-add-button {
@@ -136,9 +138,102 @@ body {
   cursor: pointer;
 }
 
+.sidebar-add-button.is-active {
+  background: var(--accent);
+}
+
+.sidebar-search {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+}
+
+.sidebar-search-panel {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  min-height: 0;
+}
+
+.sidebar-search-results {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+}
+
+.sidebar-search-empty {
+  margin: 0;
+  padding: 12px 10px;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.sidebar-search-result {
+  border: 0;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  font: inherit;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.sidebar-search-result:hover {
+  background: var(--bg-surface-soft);
+}
+
+.sidebar-search-result-file {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.sidebar-search-result-line {
+  color: var(--accent);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sidebar-search-result-text {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-search-icon {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.sidebar-search-input {
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  outline: none;
+}
+
+.sidebar-search-input::placeholder {
+  color: var(--text-dim);
+}
+
 .file-list {
   display: grid;
   gap: 10px;
+  align-content: start;
 }
 
 .file-row {
@@ -432,10 +527,20 @@ body {
   color: #1d1d1d;
 }
 
+.content-editor:not([readonly])::selection {
+  background: #ff174e;
+  color: #ffffff;
+}
+
 .content-editor[readonly] {
   color: var(--text-main);
   cursor: default;
   background: var(--bg-editor-readonly);
+}
+
+.content-editor[readonly]::selection {
+  background: #ffd000;
+  color: #000000;
 }
 
 .message {
