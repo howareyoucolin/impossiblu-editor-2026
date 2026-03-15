@@ -3,11 +3,12 @@ const { execFile, execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
+const packagedDataFolderName = 'ImpossibluEditor'
 const iconPath = path.join(__dirname, 'src', 'assets', 'icon.png')
 
 function getDataDirectory() {
     if (app.isPackaged) {
-        return path.join(app.getPath('userData'), 'local-data')
+        return path.join(app.getPath('appData'), packagedDataFolderName, 'local-data')
     }
 
     return path.join(__dirname, 'local-data')
@@ -239,13 +240,15 @@ function renameLocalFile(oldFileName, newFileName) {
 function openLocalDataTerminal() {
     const dataDirectory = getDataDirectory()
     if (process.platform === 'darwin') {
+        const escapedPath = dataDirectory.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+
         execFile('osascript', [
             '-e',
             'tell application "Terminal"',
             '-e',
             'activate',
             '-e',
-            `do script "cd ${dataDirectory.replace(/"/g, '\\"')}"`,
+            `do script "cd \\"${escapedPath}\\""`,
             '-e',
             'end tell',
         ])

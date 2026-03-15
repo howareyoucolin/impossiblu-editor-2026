@@ -91,7 +91,7 @@ The app also provides a recent-commits modal and a button to open Terminal in `l
 
 In development, the app uses the repo-local `local-data/` folder.
 
-In the packaged macOS app, `local-data/` is stored under Electron `userData`, which should be:
+In the packaged macOS app, `local-data/` is stored here:
 
 ```bash
 ~/Library/Application Support/ImpossibluEditor/local-data
