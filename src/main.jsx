@@ -65,7 +65,6 @@ function App() {
     const [activeFile, setActiveFile] = useState('')
     const [openTabs, setOpenTabs] = useState([])
     const [editorStates, setEditorStates] = useState({})
-    const [copyBubble, setCopyBubble] = useState(null)
     const [deleteUnlockedFile, setDeleteUnlockedFile] = useState('')
     const [editingFileName, setEditingFileName] = useState('')
     const [isDataDirectoryReady, setIsDataDirectoryReady] = useState(null)
@@ -84,6 +83,7 @@ function App() {
     const [historyActionError, setHistoryActionError] = useState('')
     const [historyPage, setHistoryPage] = useState(1)
     const [historyTotal, setHistoryTotal] = useState(0)
+    const [isCopyPreviewOpen, setIsCopyPreviewOpen] = useState(false)
 
     const activeState = activeFile
         ? editorStates[activeFile] || getDefaultEditorState()
@@ -215,7 +215,6 @@ function App() {
                     setActiveFile('')
                     setOpenTabs([])
                     setEditorStates({})
-                    setCopyBubble(null)
                     setDeleteUnlockedFile('')
                     setEditingFileName('')
                     setIsSidebarSearchOpen(false)
@@ -274,7 +273,6 @@ function App() {
                     }))
                     setDeleteUnlockedFile('')
                     setEditingFileName('')
-                    setCopyBubble(null)
                     setRenameDraft('')
                 }
             } catch (loadError) {
@@ -293,7 +291,6 @@ function App() {
                     }))
                     setDeleteUnlockedFile('')
                     setEditingFileName('')
-                    setCopyBubble(null)
                     setRenameDraft('')
                 }
             }
@@ -405,7 +402,6 @@ function App() {
             await window.localFiles.create(fileName)
             setDeleteUnlockedFile('')
             setEditingFileName('')
-            setCopyBubble(null)
             setIsSidebarSearchOpen(false)
             setRenameDraft('')
             setSidebarSearchQuery('')
@@ -446,7 +442,6 @@ function App() {
             await window.localFiles.delete(fileName)
             setDeleteUnlockedFile('')
             setEditingFileName('')
-            setCopyBubble(null)
             setIsSidebarSearchOpen(false)
             setRenameDraft('')
             setSidebarSearchQuery('')
@@ -596,17 +591,9 @@ function App() {
                 onChangeSidebarSearch={setSidebarSearchQuery}
                 onOpenHistory={openHistoryModal}
                 onOpenUsageLookup={() => setIsUsageLookupOpen(true)}
-                copyBubble={copyBubble}
-                onCopyOpenFiles={async (event) => {
+                onCopyOpenFiles={async () => {
                     await navigator.clipboard.writeText(combinedOpenTabsContent)
-                    setCopyBubble({
-                        label: `${openTabs.length} files copied`,
-                        x: event.clientX + 10,
-                        y: event.clientY - 36,
-                    })
-                    window.setTimeout(() => {
-                        setCopyBubble(null)
-                    }, 1200)
+                    setIsCopyPreviewOpen(true)
                 }}
                 onCreateFile={handleCreateFile}
                 onDeleteFile={handleDeleteFile}
@@ -650,6 +637,49 @@ function App() {
                 sidebarSearchQuery={sidebarSearchQuery}
                 selectedFile={activeFile}
             />
+            {isCopyPreviewOpen ? (
+                <div className="history-modal-backdrop" role="presentation">
+                    <div
+                        aria-labelledby="copy-preview-title"
+                        aria-modal="true"
+                        className="history-modal copy-preview-modal"
+                        role="dialog"
+                    >
+                        <div className="history-modal-header">
+                            <h2 id="copy-preview-title"></h2>
+                            <div className="history-modal-header-actions">
+                                <button
+                                    aria-label="Close copy summary"
+                                    className="history-modal-close"
+                                    onClick={() => setIsCopyPreviewOpen(false)}
+                                    type="button"
+                                >
+                                    x
+                                </button>
+                            </div>
+                        </div>
+                        <div className="copy-preview-header">
+                            <p className="copy-preview-title">
+                                Copied {openTabs.length} files to clipboard
+                            </p>
+                            <p className="copy-preview-subtitle">
+                                Review the exported content below if you want to verify
+                                what was copied.
+                            </p>
+                        </div>
+                        <div className="copy-preview-box">{combinedOpenTabsContent}</div>
+                        <div className="copy-preview-footer">
+                            <button
+                                className="history-modal-page-button"
+                                onClick={() => setIsCopyPreviewOpen(false)}
+                                type="button"
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
             {isUsageLookupOpen ? (
                 <div className="history-modal-backdrop" role="presentation">
                     <div

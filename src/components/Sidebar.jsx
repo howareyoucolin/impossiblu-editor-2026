@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 
 export function Sidebar({
-    copyBubble,
     deleteUnlockedFile,
     editingFileName,
     files,
@@ -226,17 +225,6 @@ export function Sidebar({
                             </div>
                         </div>
                     ))}
-                </div>
-            ) : null}
-            {copyBubble ? (
-                <div
-                    className="copy-bubble"
-                    style={{
-                        left: `${copyBubble.x}px`,
-                        top: `${copyBubble.y}px`,
-                    }}
-                >
-                    {copyBubble.label}
                 </div>
             ) : null}
         </aside>
