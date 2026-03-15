@@ -86,3 +86,19 @@ File actions inside `local-data/` create git commits automatically:
 - rename
 
 The app also provides a recent-commits modal and a button to open Terminal in `local-data/`.
+
+## Packaged App Data Location
+
+In development, the app uses the repo-local `local-data/` folder.
+
+In the packaged macOS app, `local-data/` is stored under Electron `userData`, which should be:
+
+```bash
+~/Library/Application Support/ImpossibluEditor/local-data
+```
+
+You can open it in Finder with:
+
+```bash
+open ~/Library/Application\ Support/ImpossibluEditor/local-data
+```
