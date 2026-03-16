@@ -2,6 +2,10 @@
 
 An Electron + React desktop app for browsing, editing, searching, and exporting files from a local `local-data/` folder.
 
+Download:
+
+https://www.369usa.com/apps/ImpossibluEditor/
+
 ## Features
 
 - Browse top-level files in `local-data/`
