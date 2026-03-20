@@ -25,6 +25,27 @@ function getNextOpenTab(tabFiles, removedFile) {
     return tabFiles.find((fileName) => fileName !== removedFile) || ''
 }
 
+function reorderTabs(tabFiles, draggedFile, targetFile, placement = 'before') {
+    if (!draggedFile || !targetFile || draggedFile === targetFile) {
+        return tabFiles
+    }
+
+    const draggedIndex = tabFiles.indexOf(draggedFile)
+    const targetIndex = tabFiles.indexOf(targetFile)
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+        return tabFiles
+    }
+
+    const nextTabs = [...tabFiles]
+    nextTabs.splice(draggedIndex, 1)
+    const nextTargetIndex = nextTabs.indexOf(targetFile)
+    const insertIndex = placement === 'after' ? nextTargetIndex + 1 : nextTargetIndex
+
+    nextTabs.splice(insertIndex, 0, draggedFile)
+    return nextTabs
+}
+
 function getNextUntitledFileName(fileNames) {
     const baseName = 'untitled'
     const extension = '.txt'
@@ -572,6 +593,41 @@ function App() {
         }
     }
 
+    function handleCloseAllTabs() {
+        setOpenTabs([])
+        setActiveFile('')
+    }
+
+    function handleCloseOtherTabs(fileName) {
+        if (!fileName || !openTabs.includes(fileName)) {
+            return
+        }
+
+        setOpenTabs([fileName])
+        setActiveFile(fileName)
+    }
+
+    function handleCloseTabsToRight(fileName) {
+        const tabIndex = openTabs.indexOf(fileName)
+
+        if (tabIndex === -1) {
+            return
+        }
+
+        const nextTabs = openTabs.slice(0, tabIndex + 1)
+        setOpenTabs(nextTabs)
+
+        if (!nextTabs.includes(activeFile)) {
+            setActiveFile(fileName)
+        }
+    }
+
+    function handleReorderTabs(draggedFile, targetFile, placement) {
+        setOpenTabs((currentTabs) =>
+            reorderTabs(currentTabs, draggedFile, targetFile, placement)
+        )
+    }
+
     async function handleSetup() {
         setIsSettingUp(true)
         setSetupError('')
@@ -890,6 +946,9 @@ function App() {
                     )
                 }}
                 onCloseTab={handleCloseTab}
+                onCloseAllTabs={handleCloseAllTabs}
+                onCloseOtherTabs={handleCloseOtherTabs}
+                onCloseTabsToRight={handleCloseTabsToRight}
                 onChangeContent={(nextContent) => {
                     setEditorStates((currentStates) => ({
                         ...currentStates,
@@ -905,6 +964,7 @@ function App() {
                 }}
                 editorStates={editorStates}
                 openTabs={openTabs}
+                onReorderTabs={handleReorderTabs}
                 onSaveTab={handleSaveTab}
                 onToggleTabLock={(fileName) =>
                     setEditorStates((currentStates) => ({

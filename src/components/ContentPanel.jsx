@@ -118,7 +118,11 @@ export function ContentPanel({
     externalSearchJump,
     onActivateTab,
     onConsumeSearchJump,
+    onCloseAllTabs,
     onCloseTab,
+    onCloseOtherTabs,
+    onCloseTabsToRight,
+    onReorderTabs,
     onSaveTab,
     onToggleTabLock,
     openTabs,
@@ -127,6 +131,7 @@ export function ContentPanel({
 }) {
     const lineNumbersRef = useRef(null)
     const editorRef = useRef(null)
+    const contextMenuRef = useRef(null)
     const readonlyMatchRefs = useRef({})
     const isLocked = activeState?.isLocked ?? true
     const content = activeState?.content || ''
@@ -135,6 +140,10 @@ export function ContentPanel({
     const [searchTerm, setSearchTerm] = useState('')
     const [activeMatchIndex, setActiveMatchIndex] = useState(0)
     const [readonlyCopyBubble, setReadonlyCopyBubble] = useState(null)
+    const [draggedTab, setDraggedTab] = useState('')
+    const [dropTargetTab, setDropTargetTab] = useState('')
+    const [dropTargetPlacement, setDropTargetPlacement] = useState('before')
+    const [contextMenu, setContextMenu] = useState(null)
     const appliedJumpIdRef = useRef(null)
 
     const matches = useMemo(() => {
@@ -172,6 +181,50 @@ export function ContentPanel({
         setReadonlyCopyBubble(null)
         readonlyMatchRefs.current = {}
     }, [activeFile])
+
+    useEffect(() => {
+        if (!contextMenu) {
+            return undefined
+        }
+
+        function handleWindowPointerDown(event) {
+            if (event.button === 2) {
+                return
+            }
+
+            if (contextMenuRef.current?.contains(event.target)) {
+                return
+            }
+
+            setContextMenu(null)
+        }
+
+        function handleWindowKeyDown(event) {
+            if (event.key === 'Escape') {
+                setContextMenu(null)
+            }
+        }
+
+        function handleWindowBlur() {
+            setContextMenu(null)
+        }
+
+        window.addEventListener('pointerdown', handleWindowPointerDown)
+        window.addEventListener('keydown', handleWindowKeyDown)
+        window.addEventListener('blur', handleWindowBlur)
+
+        return () => {
+            window.removeEventListener('pointerdown', handleWindowPointerDown)
+            window.removeEventListener('keydown', handleWindowKeyDown)
+            window.removeEventListener('blur', handleWindowBlur)
+        }
+    }, [contextMenu])
+
+    useEffect(() => {
+        if (contextMenu && !openTabs.includes(contextMenu.fileName)) {
+            setContextMenu(null)
+        }
+    }, [contextMenu, openTabs])
 
     useEffect(() => {
         if (
@@ -242,6 +295,76 @@ export function ContentPanel({
         window.setTimeout(() => {
             setReadonlyCopyBubble(null)
         }, 900)
+    }
+
+    function handleTabDragStart(fileName, event) {
+        setDraggedTab(fileName)
+        setDropTargetTab(fileName)
+        setDropTargetPlacement('before')
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', fileName)
+    }
+
+    function handleTabDragOver(fileName, event) {
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        const tabBounds = event.currentTarget.getBoundingClientRect()
+        const triggerOffset = Math.max(16, tabBounds.width * 0.3)
+        const isBeforeZone = event.clientX <= tabBounds.left + triggerOffset
+        const isAfterZone = event.clientX >= tabBounds.right - triggerOffset
+        const nextPlacement = isAfterZone && !isBeforeZone ? 'after' : 'before'
+
+        if (
+            draggedTab &&
+            draggedTab !== fileName &&
+            (dropTargetTab !== fileName || dropTargetPlacement !== nextPlacement)
+        ) {
+            setDropTargetTab(fileName)
+            setDropTargetPlacement(nextPlacement)
+            onReorderTabs(draggedTab, fileName, nextPlacement)
+        }
+    }
+
+    function handleTabDrop(fileName, event) {
+        event.preventDefault()
+        setDraggedTab('')
+        setDropTargetTab('')
+        setDropTargetPlacement('before')
+    }
+
+    function handleTabDragEnd() {
+        setDraggedTab('')
+        setDropTargetTab('')
+        setDropTargetPlacement('before')
+    }
+
+    function handleTabContextMenu(fileName, event) {
+        event.preventDefault()
+        setContextMenu({
+            fileName,
+            x: event.clientX,
+            y: event.clientY,
+        })
+    }
+
+    function handleContextMenuAction(action) {
+        if (!contextMenu) {
+            return
+        }
+
+        if (action === 'close-all') {
+            onCloseAllTabs()
+        }
+
+        if (action === 'close-others') {
+            onCloseOtherTabs(contextMenu.fileName)
+        }
+
+        if (action === 'close-right') {
+            onCloseTabsToRight(contextMenu.fileName)
+        }
+
+        setContextMenu(null)
     }
 
     function focusMatch(matchIndex) {
@@ -362,11 +485,34 @@ export function ContentPanel({
                         return (
                             <div
                                 key={fileName}
-                                className={
-                                    fileName === activeFile
-                                        ? 'content-tab is-active'
-                                        : 'content-tab'
+                                className={[
+                                    'content-tab',
+                                    fileName === activeFile ? 'is-active' : '',
+                                    draggedTab === fileName ? 'is-dragging' : '',
+                                    dropTargetTab === fileName && draggedTab !== fileName
+                                        ? 'is-drop-target'
+                                        : '',
+                                    dropTargetTab === fileName &&
+                                    draggedTab !== fileName &&
+                                    dropTargetPlacement === 'after'
+                                        ? 'is-drop-after'
+                                        : '',
+                                    dropTargetTab === fileName &&
+                                    draggedTab !== fileName &&
+                                    dropTargetPlacement !== 'after'
+                                        ? 'is-drop-before'
+                                        : '',
+                                ]
+                                    .filter(Boolean)
+                                    .join(' ')}
+                                draggable
+                                onContextMenu={(event) =>
+                                    handleTabContextMenu(fileName, event)
                                 }
+                                onDragEnd={handleTabDragEnd}
+                                onDragOver={(event) => handleTabDragOver(fileName, event)}
+                                onDragStart={(event) => handleTabDragStart(fileName, event)}
+                                onDrop={(event) => handleTabDrop(fileName, event)}
                                 role="tab"
                             >
                                 <button
@@ -423,6 +569,47 @@ export function ContentPanel({
                             </div>
                         )
                     })}
+                </div>
+            ) : null}
+            {contextMenu ? (
+                <div
+                    className="tab-context-menu"
+                    ref={contextMenuRef}
+                    role="menu"
+                    style={{
+                        left: contextMenu.x,
+                        top: contextMenu.y,
+                    }}
+                >
+                    <button
+                        className="tab-context-menu-item"
+                        disabled={openTabs.length <= 1}
+                        onClick={() => handleContextMenuAction('close-others')}
+                        role="menuitem"
+                        type="button"
+                    >
+                        Close Other Tabs
+                    </button>
+                    <button
+                        className="tab-context-menu-item"
+                        disabled={
+                            openTabs.indexOf(contextMenu.fileName) === openTabs.length - 1
+                        }
+                        onClick={() => handleContextMenuAction('close-right')}
+                        role="menuitem"
+                        type="button"
+                    >
+                        Close Tabs to the Right
+                    </button>
+                    <button
+                        className="tab-context-menu-item danger"
+                        disabled={openTabs.length === 0}
+                        onClick={() => handleContextMenuAction('close-all')}
+                        role="menuitem"
+                        type="button"
+                    >
+                        Close All Tabs
+                    </button>
                 </div>
             ) : null}
             {activeFile ? (
