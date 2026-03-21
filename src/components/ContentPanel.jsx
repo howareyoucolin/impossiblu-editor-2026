@@ -131,6 +131,7 @@ export function ContentPanel({
 }) {
     const lineNumbersRef = useRef(null)
     const editorRef = useRef(null)
+    const searchInputRef = useRef(null)
     const readonlyContentRef = useRef(null)
     const contextMenuRef = useRef(null)
     const readonlyMatchRefs = useRef({})
@@ -139,6 +140,7 @@ export function ContentPanel({
     const lineCount = content.split('\n').length
     const lineNumbers = Array.from({ length: lineCount }, (_value, index) => index + 1)
     const [searchTerm, setSearchTerm] = useState('')
+    const [isSearchOpen, setIsSearchOpen] = useState(false)
     const [activeMatchIndex, setActiveMatchIndex] = useState(0)
     const [readonlyCopyBubble, setReadonlyCopyBubble] = useState(null)
     const [draggedTab, setDraggedTab] = useState('')
@@ -178,10 +180,42 @@ export function ContentPanel({
 
     useEffect(() => {
         setSearchTerm('')
+        setIsSearchOpen(false)
         setActiveMatchIndex(0)
         setReadonlyCopyBubble(null)
         readonlyMatchRefs.current = {}
     }, [activeFile])
+
+    useEffect(() => {
+        if (!activeFile) {
+            return undefined
+        }
+
+        function handleWindowKeyDown(event) {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+                event.preventDefault()
+                setIsSearchOpen(true)
+                return
+            }
+
+            if (event.key === 'Escape') {
+                setIsSearchOpen(false)
+            }
+        }
+
+        window.addEventListener('keydown', handleWindowKeyDown)
+
+        return () => {
+            window.removeEventListener('keydown', handleWindowKeyDown)
+        }
+    }, [activeFile])
+
+    useEffect(() => {
+        if (isSearchOpen) {
+            searchInputRef.current?.focus()
+            searchInputRef.current?.select()
+        }
+    }, [isSearchOpen])
 
     useEffect(() => {
         if (!contextMenu) {
@@ -236,6 +270,7 @@ export function ContentPanel({
             return
         }
 
+        setIsSearchOpen(true)
         setSearchTerm(externalSearchJump.query)
     }, [activeFile, externalSearchJump])
 
@@ -391,6 +426,12 @@ export function ContentPanel({
         range.selectNodeContents(readonlyContentRef.current)
         selection.removeAllRanges()
         selection.addRange(range)
+    }
+
+    function handleCloseSearch() {
+        setIsSearchOpen(false)
+        setSearchTerm('')
+        setActiveMatchIndex(0)
     }
 
     function focusMatch(matchIndex) {
@@ -640,39 +681,50 @@ export function ContentPanel({
             ) : null}
             {activeFile ? (
                 <div className="editor-shell">
-                    <div className="content-search content-search-inline">
-                        <input
-                            className="content-search-input"
-                            onChange={(event) => {
-                                setSearchTerm(event.target.value)
-                                setActiveMatchIndex(0)
-                            }}
-                            placeholder="Search"
-                            type="text"
-                            value={searchTerm}
-                        />
-                        <span className="content-search-count">
-                            {matches.length > 0
-                                ? `${activeMatchIndex + 1}/${matches.length}`
-                                : '0/0'}
-                        </span>
-                        <button
-                            className="content-search-button"
-                            disabled={matches.length === 0}
-                            onClick={() => handleSearchStep('previous')}
-                            type="button"
-                        >
-                            <i className="fa-solid fa-chevron-up" aria-hidden="true" />
-                        </button>
-                        <button
-                            className="content-search-button"
-                            disabled={matches.length === 0}
-                            onClick={() => handleSearchStep('next')}
-                            type="button"
-                        >
-                            <i className="fa-solid fa-chevron-down" aria-hidden="true" />
-                        </button>
-                    </div>
+                    {isSearchOpen ? (
+                        <div className="content-search content-search-inline">
+                            <input
+                                ref={searchInputRef}
+                                className="content-search-input"
+                                onChange={(event) => {
+                                    setSearchTerm(event.target.value)
+                                    setActiveMatchIndex(0)
+                                }}
+                                placeholder="Search"
+                                type="text"
+                                value={searchTerm}
+                            />
+                            <span className="content-search-count">
+                                {matches.length > 0
+                                    ? `${activeMatchIndex + 1}/${matches.length}`
+                                    : '0/0'}
+                            </span>
+                            <button
+                                className="content-search-button"
+                                disabled={matches.length === 0}
+                                onClick={() => handleSearchStep('previous')}
+                                type="button"
+                            >
+                                <i className="fa-solid fa-chevron-up" aria-hidden="true" />
+                            </button>
+                            <button
+                                className="content-search-button"
+                                disabled={matches.length === 0}
+                                onClick={() => handleSearchStep('next')}
+                                type="button"
+                            >
+                                <i className="fa-solid fa-chevron-down" aria-hidden="true" />
+                            </button>
+                            <button
+                                aria-label="Close search"
+                                className="content-search-button content-search-close"
+                                onClick={handleCloseSearch}
+                                type="button"
+                            >
+                                x
+                            </button>
+                        </div>
+                    ) : null}
                     <div className="line-numbers" ref={lineNumbersRef}>
                         {lineNumbers.map((lineNumber) => (
                             <div key={lineNumber} className="line-number">

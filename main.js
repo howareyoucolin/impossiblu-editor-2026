@@ -111,6 +111,25 @@ function resolveLocalFilePath(fileName) {
     return filePath
 }
 
+function isGitIgnored(entryPath) {
+    const dataDirectory = getDataDirectory()
+
+    if (!fs.existsSync(path.join(dataDirectory, '.git'))) {
+        return false
+    }
+
+    try {
+        execFileSync('git', ['check-ignore', '--no-index', entryPath], {
+            cwd: dataDirectory,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        })
+        return true
+    } catch (_error) {
+        return false
+    }
+}
+
 function listLocalEntries() {
     const dataDirectory = getDataDirectory()
     const entries = []
@@ -140,6 +159,7 @@ function listLocalEntries() {
 
             if (entry.isDirectory()) {
                 entries.push({
+                    ignored: isGitIgnored(entryPath),
                     path: entryPath,
                     type: 'directory',
                 })
@@ -149,6 +169,7 @@ function listLocalEntries() {
 
             if (entry.isFile()) {
                 entries.push({
+                    ignored: isGitIgnored(entryPath),
                     path: entryPath,
                     type: 'file',
                 })

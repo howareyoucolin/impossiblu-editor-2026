@@ -70,10 +70,9 @@ function reorderTabs(tabFiles, draggedFile, targetFile, placement = 'before') {
 
 function getNextUntitledFileName(fileNames, parentPath = '') {
     const baseName = 'untitled'
-    const extension = '.txt'
     const firstChoice = parentPath
-        ? `${parentPath}/${baseName}${extension}`
-        : `${baseName}${extension}`
+        ? `${parentPath}/${baseName}`
+        : `${baseName}`
 
     if (!fileNames.includes(firstChoice)) {
         return firstChoice
@@ -84,16 +83,16 @@ function getNextUntitledFileName(fileNames, parentPath = '') {
     while (
         fileNames.includes(
             parentPath
-                ? `${parentPath}/${baseName}-${index}${extension}`
-                : `${baseName}-${index}${extension}`
+                ? `${parentPath}/${baseName}-${index}`
+                : `${baseName}-${index}`
         )
     ) {
         index += 1
     }
 
     return parentPath
-        ? `${parentPath}/${baseName}-${index}${extension}`
-        : `${baseName}-${index}${extension}`
+        ? `${parentPath}/${baseName}-${index}`
+        : `${baseName}-${index}`
 }
 
 function getNextUntitledFolderName(entries, parentPath = '') {
@@ -118,6 +117,16 @@ function getNextUntitledFolderName(entries, parentPath = '') {
     }
 
     return parentPath ? `${parentPath}/${baseName}-${index}` : `${baseName}-${index}`
+}
+
+function getInitialOpenFile(entries) {
+    const filePaths = entries
+        .filter((entry) => entry.type === 'file')
+        .filter((entry) => !getPathBaseName(entry.path).startsWith('.'))
+        .map((entry) => entry.path)
+    const rootFilePath = filePaths.find((filePath) => !filePath.includes('/'))
+
+    return rootFilePath || filePaths[0] || ''
 }
 
 function formatContentForExport(content) {
@@ -175,6 +184,7 @@ function App() {
     const [isSidebarSearchLoading, setIsSidebarSearchLoading] = useState(false)
     const [sidebarSearchQuery, setSidebarSearchQuery] = useState('')
     const [sidebarSearchResults, setSidebarSearchResults] = useState([])
+    const [isShowingHiddenFiles, setIsShowingHiddenFiles] = useState(false)
     const [contentSearchJump, setContentSearchJump] = useState(null)
     const [isHistoryOpen, setIsHistoryOpen] = useState(false)
     const [isUsageLookupOpen, setIsUsageLookupOpen] = useState(false)
@@ -192,6 +202,13 @@ function App() {
                 .map((entry) => entry.path)
                 .sort((a, b) => a.localeCompare(b)),
         [entries]
+    )
+    const sidebarEntries = useMemo(
+        () =>
+            isShowingHiddenFiles
+                ? entries
+                : entries.filter((entry) => !getPathBaseName(entry.path).startsWith('.')),
+        [entries, isShowingHiddenFiles]
     )
 
     const activeState = activeFile
@@ -311,9 +328,7 @@ function App() {
         async function loadFiles() {
             try {
                 const nextEntries = await window.localFiles.list()
-                const nextFiles = nextEntries
-                    .filter((entry) => entry.type === 'file')
-                    .map((entry) => entry.path)
+                const initialFile = getInitialOpenFile(nextEntries)
 
                 if (cancelled) {
                     return
@@ -321,8 +336,8 @@ function App() {
 
                 setEntries(nextEntries)
 
-                if (nextFiles.length > 0) {
-                    openFile(nextFiles[0])
+                if (initialFile) {
+                    openFile(initialFile)
                 } else {
                     setActiveFile('')
                     setOpenTabs([])
@@ -823,9 +838,10 @@ function App() {
         <main className="app-shell">
             <Sidebar
                 editingFileName={editingFileName}
-                entries={entries}
+                entries={sidebarEntries}
                 isAboutOpen={isAboutOpen}
                 isHistoryOpen={isHistoryOpen}
+                isShowingHiddenFiles={isShowingHiddenFiles}
                 isUsageLookupOpen={isUsageLookupOpen}
                 isSidebarSearchOpen={isSidebarSearchOpen}
                 isSidebarSearchLoading={isSidebarSearchLoading}
@@ -868,6 +884,9 @@ function App() {
                     setSidebarSearchQuery('')
                     setSidebarSearchResults([])
                 }}
+                onToggleShowHiddenFiles={() =>
+                    setIsShowingHiddenFiles((current) => !current)
+                }
                 renameDraft={renameDraft}
                 searchResults={sidebarSearchResults}
                 sidebarSearchQuery={sidebarSearchQuery}

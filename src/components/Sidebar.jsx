@@ -4,6 +4,7 @@ function createFolderNode(path, name) {
     return {
         files: [],
         folders: [],
+        hidden: name.startsWith('.'),
         name,
         path,
     }
@@ -33,6 +34,8 @@ function buildSidebarTree(entries) {
 
             if (isLeaf && entry.type === 'file') {
                 currentFolder.files.push({
+                    hidden: part.startsWith('.'),
+                    ignored: entry.ignored ?? false,
                     name: part,
                     path: entry.path,
                 })
@@ -70,6 +73,7 @@ export function Sidebar({
     editingFileName,
     entries,
     isHistoryOpen,
+    isShowingHiddenFiles,
     isUsageLookupOpen,
     isSidebarSearchOpen,
     isSidebarSearchLoading,
@@ -90,6 +94,7 @@ export function Sidebar({
     onRenameStart,
     onSelectFile,
     onToggleSidebarSearch,
+    onToggleShowHiddenFiles,
     renameDraft,
     searchResults,
     sidebarSearchQuery,
@@ -111,7 +116,7 @@ export function Sidebar({
                 .filter((entry) => entry.type === 'directory')
                 .forEach((entry) => {
                     if (!(entry.path in nextFolders)) {
-                        nextFolders[entry.path] = true
+                        nextFolders[entry.path] = false
                     }
                 })
 
@@ -232,7 +237,14 @@ export function Sidebar({
         return (
             <div
                 key={file.path}
-                className={file.path === selectedFile ? 'file-row is-active' : 'file-row'}
+                className={[
+                    'file-row',
+                    file.path === selectedFile ? 'is-active' : '',
+                    file.hidden ? 'is-hidden-entry' : '',
+                    file.ignored ? 'is-ignored' : '',
+                ]
+                    .filter(Boolean)
+                    .join(' ')}
                 draggable
                 onContextMenu={(event) => {
                     handleSidebarContextMenu(
@@ -291,6 +303,7 @@ export function Sidebar({
                         className={[
                             'folder-row',
                             containsSelectedFile ? 'contains-active' : '',
+                            folder.hidden ? 'is-hidden-entry' : '',
                             'is-editing',
                         ]
                             .filter(Boolean)
@@ -332,6 +345,7 @@ export function Sidebar({
                         className={[
                             'folder-row',
                             containsSelectedFile ? 'contains-active' : '',
+                            folder.hidden ? 'is-hidden-entry' : '',
                             dropTargetPath === folder.path ? 'is-drop-target' : '',
                         ]
                             .filter(Boolean)
@@ -441,6 +455,33 @@ export function Sidebar({
                         type="button"
                     >
                         <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
+                    </button>
+                    <button
+                        className={
+                            isShowingHiddenFiles
+                                ? 'sidebar-add-button is-active'
+                                : 'sidebar-add-button'
+                        }
+                        aria-label="Toggle hidden files"
+                        onClick={onToggleShowHiddenFiles}
+                        onMouseEnter={() =>
+                            setHoveredToolbarButton(
+                                isShowingHiddenFiles
+                                    ? 'Hide Invisible Files'
+                                    : 'Show Invisible Files'
+                            )
+                        }
+                        onMouseLeave={() => setHoveredToolbarButton('')}
+                        type="button"
+                    >
+                        <i
+                            className={
+                                isShowingHiddenFiles
+                                    ? 'fa-solid fa-eye'
+                                    : 'fa-solid fa-eye-slash'
+                            }
+                            aria-hidden="true"
+                        />
                     </button>
                     <button
                         className={
