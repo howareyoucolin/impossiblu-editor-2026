@@ -1,120 +1,230 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import CodeMirror from '@uiw/react-codemirror'
+import { html as htmlLanguage } from '@codemirror/lang-html'
+import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
+import { Prec } from '@codemirror/state'
+import { oneDark } from '@codemirror/theme-one-dark'
+import { tags } from '@lezer/highlight'
 
-const TAG_PATTERN = /\[(copy|pass|link)=([^\]]*)\]/g
+const SPECIAL_TAG_PATTERN = /\[(copy|pass|link)=([^\]]*)\]/g
+const SPACE_BLOCK_TAG = 'SPACE-BLOCK'
+const htmlSourceHighlightStyle = HighlightStyle.define([
+    {
+        tag: [tags.angleBracket, tags.tagName, tags.attributeName, tags.attributeValue],
+        color: '#93879a',
+    },
+    {
+        tag: tags.comment,
+        color: '#776b7d',
+        fontStyle: 'italic',
+    },
+])
+
+const VISUAL_BLOCK_TAGS = ['P', 'H1', 'PRE', SPACE_BLOCK_TAG]
+const BLOCK_TYPE_OPTIONS = [
+    { label: 'Convert to Text', tagName: 'P' },
+    { label: 'Convert to Heading', tagName: 'H1' },
+    { label: 'Convert to Code Block', tagName: 'PRE' },
+]
+const SPECIAL_TAG_OPTIONS = [
+    { label: 'Convert to Copy Tag', tokenType: 'copy' },
+    { label: 'Convert to Password Tag', tokenType: 'pass' },
+    { label: 'Convert to Link Tag', tokenType: 'link' },
+]
 
 function formatTabLabel(fileName) {
     return fileName.length > 15 ? `${fileName.slice(0, 15)}...` : fileName
 }
 
-function parseReadonlySegments(content) {
-    const segments = []
-    let lastIndex = 0
-    let match
-    TAG_PATTERN.lastIndex = 0
-
-    while ((match = TAG_PATTERN.exec(content)) !== null) {
-        const [rawText, type, value] = match
-        const start = match.index
-
-        if (start > lastIndex) {
-            segments.push({
-                displayText: content.slice(lastIndex, start),
-                rawEnd: start,
-                rawStart: lastIndex,
-                type: 'text',
-            })
-        }
-
-        const prefixLength = `[${type}=`.length
-
-        segments.push({
-            displayText: type === 'pass' ? '*'.repeat(value.length) : value,
-            rawEnd: start + rawText.length,
-            rawStart: start,
-            type,
-            value,
-            valueRawEnd: start + prefixLength + value.length,
-            valueRawStart: start + prefixLength,
-        })
-
-        lastIndex = start + rawText.length
-    }
-
-    if (lastIndex < content.length) {
-        segments.push({
-            displayText: content.slice(lastIndex),
-            rawEnd: content.length,
-            rawStart: lastIndex,
-            type: 'text',
-        })
-    }
-
-    return segments
+function escapeHtml(text) {
+    return text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
 }
 
-function buildSegmentParts(segment, matches, activeMatchIndex) {
-    const hasValueRange =
-        typeof segment.valueRawStart === 'number' && typeof segment.valueRawEnd === 'number'
-    const segmentStart = hasValueRange ? segment.valueRawStart : segment.rawStart
-    const segmentEnd = hasValueRange ? segment.valueRawEnd : segment.rawEnd
-    const nextParts = []
-    let cursor = segmentStart
+function convertPlainTextToHtml(text) {
+    const normalizedText = text.replace(/\r\n?/g, '\n')
+    const lines = normalizedText.split('\n')
 
-    matches.forEach((match, matchIndex) => {
-        const overlapStart = Math.max(segmentStart, match.start)
-        const overlapEnd = Math.min(segmentEnd, match.end)
+    return (
+        lines
+            .map((line) => (line ? `<p>${escapeHtml(line)}</p>` : '<p><br /></p>'))
+            .join('') || '<p><br /></p>'
+    )
+}
 
-        if (overlapStart >= overlapEnd) {
+function createSpecialTokenNode(type, value) {
+    const displayValue = type === 'pass' ? '•'.repeat(value.length) : value
+
+    if (type === 'link') {
+        const linkElement = document.createElement('a')
+        linkElement.className = 'special-token special-token-link'
+        linkElement.href = value
+        linkElement.target = '_blank'
+        linkElement.rel = 'noreferrer'
+        linkElement.dataset.tokenType = type
+        linkElement.dataset.tokenValue = value
+        linkElement.contentEditable = 'false'
+        linkElement.textContent = value
+        return linkElement
+    }
+
+    const tokenElement = document.createElement('span')
+    tokenElement.className = `special-token special-token-${type}`
+    tokenElement.dataset.tokenType = type
+    tokenElement.dataset.tokenValue = value
+    tokenElement.contentEditable = 'false'
+    tokenElement.textContent = displayValue
+    return tokenElement
+}
+
+function decorateSpecialTokens(html) {
+    if (typeof document === 'undefined') {
+        return html
+    }
+
+    const container = document.createElement('div')
+    container.innerHTML = html
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+    const textNodes = []
+
+    while (walker.nextNode()) {
+        const currentNode = walker.currentNode
+
+        if (
+            currentNode.parentElement?.closest('[data-token-type]') ||
+            !currentNode.textContent?.includes('[')
+        ) {
+            continue
+        }
+
+        textNodes.push(currentNode)
+    }
+
+    textNodes.forEach((textNode) => {
+        const fragment = document.createDocumentFragment()
+        const sourceText = textNode.textContent || ''
+        let lastIndex = 0
+        let match
+
+        SPECIAL_TAG_PATTERN.lastIndex = 0
+
+        while ((match = SPECIAL_TAG_PATTERN.exec(sourceText)) !== null) {
+            const [rawText, type, value] = match
+            const matchStart = match.index
+
+            if (matchStart > lastIndex) {
+                fragment.append(sourceText.slice(lastIndex, matchStart))
+            }
+
+            fragment.append(createSpecialTokenNode(type, value))
+            lastIndex = matchStart + rawText.length
+        }
+
+        if (lastIndex === 0) {
             return
         }
 
-        if (cursor < overlapStart) {
-            nextParts.push({
-                isActive: false,
-                isMatch: false,
-                text: segment.displayText.slice(
-                    cursor - segmentStart,
-                    overlapStart - segmentStart
-                ),
-            })
+        if (lastIndex < sourceText.length) {
+            fragment.append(sourceText.slice(lastIndex))
         }
 
-        nextParts.push({
-            isActive: matchIndex === activeMatchIndex,
-            isMatch: true,
-            matchIndex,
-            text: segment.displayText.slice(
-                overlapStart - segmentStart,
-                overlapEnd - segmentStart
-            ),
-        })
-        cursor = overlapEnd
+        textNode.replaceWith(fragment)
     })
 
-    if (cursor < segmentEnd) {
-        nextParts.push({
-            isActive: false,
-            isMatch: false,
-            text: segment.displayText.slice(cursor - segmentStart),
-        })
+    return container.innerHTML
+}
+
+function serializeDecoratedHtml(html) {
+    if (typeof document === 'undefined') {
+        return html
     }
 
-    if (nextParts.length === 0) {
-        return [
-            {
-                isActive: false,
-                isMatch: false,
-                text: segment.displayText,
-            },
-        ]
+    const container = document.createElement('div')
+    container.innerHTML = html
+
+    container.querySelectorAll('[data-token-type]').forEach((tokenElement) => {
+        const type = tokenElement.getAttribute('data-token-type') || ''
+        const value = tokenElement.getAttribute('data-token-value') || ''
+
+        tokenElement.replaceWith(document.createTextNode(`[${type}=${value}]`))
+    })
+
+    return container.innerHTML
+}
+
+function normalizeEditorHtml(content) {
+    if (!content.trim()) {
+        return '<p><br /></p>'
     }
 
-    return nextParts.filter((part) => part.text !== '')
+    if (!/<\/?[a-z][\s\S]*>/i.test(content)) {
+        return convertPlainTextToHtml(content)
+    }
+
+    if (typeof document === 'undefined') {
+        return content
+    }
+
+    const container = document.createElement('div')
+    container.innerHTML = content
+
+    const blocks = Array.from(container.childNodes).flatMap((node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+            const text = node.textContent || ''
+            if (!text.trim()) {
+                return []
+            }
+            return text ? [`<p>${escapeHtml(text)}</p>`] : []
+        }
+
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+            return []
+        }
+
+        const tagName = node.nodeName.toLowerCase()
+
+        if (tagName === 'p') {
+            return [`<p>${node.innerHTML.trim() || '<br />'}</p>`]
+        }
+
+        if (tagName === 'h1' || tagName === 'pre') {
+            return [`<${tagName}>${node.innerHTML.trim() || '<br />'}</${tagName}>`]
+        }
+
+        if (tagName === 'space-block') {
+            return ['<space-block></space-block>']
+        }
+
+        if (tagName === 'br') {
+            return ['<p><br /></p>']
+        }
+
+        if (tagName === 'div') {
+            return [`<p>${node.innerHTML.trim() || '<br />'}</p>`]
+        }
+
+        return [`<p>${escapeHtml(node.textContent || '') || '<br />'}</p>`]
+    })
+
+    return blocks.join('') || '<p><br /></p>'
+}
+
+function getPlainTextFromHtml(content) {
+    if (typeof document === 'undefined') {
+        return content.replace(/<[^>]+>/g, '')
+    }
+
+    const container = document.createElement('div')
+    container.innerHTML = decorateSpecialTokens(normalizeEditorHtml(content))
+    return container.textContent || container.innerText || ''
 }
 
 export function ContentPanel({
     activeFile,
     activeState,
+    onDiscardChanges,
     externalSearchJump,
     onActivateTab,
     onConsumeSearchJump,
@@ -129,32 +239,56 @@ export function ContentPanel({
     editorStates,
     onChangeContent,
 }) {
-    const lineNumbersRef = useRef(null)
-    const editorRef = useRef(null)
+    const editSurfaceRef = useRef(null)
     const searchInputRef = useRef(null)
     const readonlyContentRef = useRef(null)
     const contextMenuRef = useRef(null)
-    const readonlyMatchRefs = useRef({})
+    const blockMenuRef = useRef(null)
+    const specialTagMenuRef = useRef(null)
+    const hoveredBlockRef = useRef(null)
+    const selectedTokenRef = useRef(null)
+    const selectionRangeRef = useRef(null)
+    const insertionTargetRef = useRef(null)
     const isLocked = activeState?.isLocked ?? true
     const content = activeState?.content || ''
-    const lineCount = content.split('\n').length
-    const lineNumbers = Array.from({ length: lineCount }, (_value, index) => index + 1)
     const [searchTerm, setSearchTerm] = useState('')
     const [isSearchOpen, setIsSearchOpen] = useState(false)
     const [activeMatchIndex, setActiveMatchIndex] = useState(0)
-    const [readonlyCopyBubble, setReadonlyCopyBubble] = useState(null)
+    const [copyBubble, setCopyBubble] = useState(null)
+    const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false)
     const [draggedTab, setDraggedTab] = useState('')
     const [dropTargetTab, setDropTargetTab] = useState('')
     const [dropTargetPlacement, setDropTargetPlacement] = useState('before')
     const [contextMenu, setContextMenu] = useState(null)
+    const [editorMode, setEditorMode] = useState('visual')
+    const [blockMenu, setBlockMenu] = useState({
+        insertMode: false,
+        tagName: 'P',
+        x: 0,
+        y: 0,
+        visible: false,
+    })
+    const [specialTagMenu, setSpecialTagMenu] = useState({
+        hasSelection: false,
+        tokenType: '',
+        visible: false,
+        x: 0,
+        y: 0,
+    })
     const appliedJumpIdRef = useRef(null)
+    const normalizedHtmlContent = useMemo(() => normalizeEditorHtml(content), [content])
+    const decoratedHtmlContent = useMemo(
+        () => decorateSpecialTokens(normalizedHtmlContent),
+        [normalizedHtmlContent]
+    )
+    const searchableContent = useMemo(() => getPlainTextFromHtml(content), [content])
 
     const matches = useMemo(() => {
         if (!searchTerm) {
             return []
         }
 
-        const lowerContent = content.toLowerCase()
+        const lowerContent = searchableContent.toLowerCase()
         const lowerSearchTerm = searchTerm.toLowerCase()
         const nextMatches = []
         let startIndex = 0
@@ -174,17 +308,51 @@ export function ContentPanel({
         }
 
         return nextMatches
-    }, [content, searchTerm])
-
-    const readonlySegments = useMemo(() => parseReadonlySegments(content), [content])
+    }, [searchTerm, searchableContent])
 
     useEffect(() => {
         setSearchTerm('')
         setIsSearchOpen(false)
         setActiveMatchIndex(0)
-        setReadonlyCopyBubble(null)
-        readonlyMatchRefs.current = {}
+        setCopyBubble(null)
+        setIsDiscardConfirmOpen(false)
+        setEditorMode('visual')
+        hoveredBlockRef.current = null
+        setBlockMenu({
+            insertMode: false,
+            tagName: 'P',
+            x: 0,
+            y: 0,
+            visible: false,
+        })
+        setSpecialTagMenu({
+            hasSelection: false,
+            tokenType: '',
+            visible: false,
+            x: 0,
+            y: 0,
+        })
+        selectedTokenRef.current = null
+        selectionRangeRef.current = null
+        insertionTargetRef.current = null
     }, [activeFile])
+
+    useEffect(() => {
+        if (!activeState?.isDirty) {
+            setIsDiscardConfirmOpen(false)
+        }
+    }, [activeState?.isDirty])
+
+    useEffect(() => {
+        if (!isLocked && editorMode === 'visual' && editSurfaceRef.current) {
+            if (
+                document.activeElement !== editSurfaceRef.current &&
+                editSurfaceRef.current.innerHTML !== decoratedHtmlContent
+            ) {
+                editSurfaceRef.current.innerHTML = decoratedHtmlContent
+            }
+        }
+    }, [decoratedHtmlContent, editorMode, isLocked])
 
     useEffect(() => {
         if (!activeFile) {
@@ -262,6 +430,74 @@ export function ContentPanel({
     }, [contextMenu, openTabs])
 
     useEffect(() => {
+        if (!blockMenu.visible) {
+            return undefined
+        }
+
+        function handleWindowPointerDown(event) {
+            if (blockMenuRef.current?.contains(event.target)) {
+                return
+            }
+
+            setBlockMenu((currentState) => ({
+                ...currentState,
+                visible: false,
+            }))
+        }
+
+        function handleWindowKeyDown(event) {
+            if (event.key === 'Escape') {
+                setBlockMenu((currentState) => ({
+                    ...currentState,
+                    visible: false,
+                }))
+            }
+        }
+
+        window.addEventListener('pointerdown', handleWindowPointerDown)
+        window.addEventListener('keydown', handleWindowKeyDown)
+
+        return () => {
+            window.removeEventListener('pointerdown', handleWindowPointerDown)
+            window.removeEventListener('keydown', handleWindowKeyDown)
+        }
+    }, [blockMenu.visible])
+
+    useEffect(() => {
+        if (!specialTagMenu.visible) {
+            return undefined
+        }
+
+        function handleWindowPointerDown(event) {
+            if (specialTagMenuRef.current?.contains(event.target)) {
+                return
+            }
+
+            setSpecialTagMenu((currentState) => ({
+                ...currentState,
+                visible: false,
+            }))
+        }
+
+        function handleWindowKeyDown(event) {
+            if (event.key === 'Escape') {
+                setSpecialTagMenu((currentState) => ({
+                    ...currentState,
+                    visible: false,
+                }))
+            }
+        }
+
+        window.addEventListener('pointerdown', handleWindowPointerDown)
+        window.addEventListener('keydown', handleWindowKeyDown)
+
+        return () => {
+            window.removeEventListener('pointerdown', handleWindowPointerDown)
+            window.removeEventListener('keydown', handleWindowKeyDown)
+        }
+    }, [specialTagMenu.visible])
+
+    useEffect(() => {
         if (
             !externalSearchJump ||
             externalSearchJump.fileName !== activeFile ||
@@ -315,23 +551,6 @@ export function ContentPanel({
         onConsumeSearchJump,
         searchTerm,
     ])
-
-    async function handleReadonlyTagClick(segment, event) {
-        if (segment.type === 'link') {
-            await window.localFiles.openLink(segment.value)
-            return
-        }
-
-        await navigator.clipboard.writeText(segment.value)
-        setReadonlyCopyBubble({
-            label: 'Copied',
-            x: event.clientX,
-            y: event.clientY,
-        })
-        window.setTimeout(() => {
-            setReadonlyCopyBubble(null)
-        }, 900)
-    }
 
     function handleTabDragStart(fileName, event) {
         setDraggedTab(fileName)
@@ -434,6 +653,384 @@ export function ContentPanel({
         setActiveMatchIndex(0)
     }
 
+    function syncEditSurfaceContent() {
+        if (!editSurfaceRef.current) {
+            return
+        }
+
+        onChangeContent(
+            normalizeEditorHtml(serializeDecoratedHtml(editSurfaceRef.current.innerHTML))
+        )
+    }
+
+    async function handleSpecialTokenClick(event) {
+        const tokenElement = event.target.closest('[data-token-type]')
+
+        if (!tokenElement) {
+            return
+        }
+
+        const tokenType = tokenElement.getAttribute('data-token-type')
+        const tokenValue = tokenElement.getAttribute('data-token-value') || ''
+
+        if (!tokenType || !tokenValue) {
+            return
+        }
+
+        event.preventDefault()
+        event.stopPropagation()
+
+        if (tokenType === 'link') {
+            await window.localFiles.openLink(tokenValue)
+            return
+        }
+
+        await navigator.clipboard.writeText(tokenValue)
+        setCopyBubble({
+            label: 'Copied',
+            x: event.clientX,
+            y: event.clientY,
+        })
+        window.setTimeout(() => {
+            setCopyBubble(null)
+        }, 900)
+    }
+
+    function closeSpecialTagMenu() {
+        setSpecialTagMenu((currentState) => ({
+            ...currentState,
+            visible: false,
+        }))
+    }
+
+    function replaceTokenElement(tokenElement, tokenType, tokenValue) {
+        const nextTokenElement = createSpecialTokenNode(tokenType, tokenValue)
+        tokenElement.replaceWith(nextTokenElement)
+        selectedTokenRef.current = nextTokenElement
+        syncEditSurfaceContent()
+        return nextTokenElement
+    }
+
+    function clearSelectedSpecialToken() {
+        const tokenElement = selectedTokenRef.current
+
+        if (!tokenElement) {
+            return
+        }
+
+        const tokenValue = tokenElement.getAttribute('data-token-value') || ''
+        tokenElement.replaceWith(document.createTextNode(tokenValue))
+        selectedTokenRef.current = null
+        syncEditSurfaceContent()
+        closeSpecialTagMenu()
+        editSurfaceRef.current?.focus()
+    }
+
+    function convertSelectedToken(tokenType) {
+        const tokenElement = selectedTokenRef.current
+
+        if (!tokenElement) {
+            return
+        }
+
+        const tokenValue = tokenElement.getAttribute('data-token-value') || ''
+        replaceTokenElement(tokenElement, tokenType, tokenValue)
+        closeSpecialTagMenu()
+        editSurfaceRef.current?.focus()
+    }
+
+    function convertSelectionToSpecialTag(tokenType) {
+        const range = selectionRangeRef.current
+
+        if (!range || range.collapsed) {
+            return
+        }
+
+        const selectedText = range.toString()
+
+        if (!selectedText.trim()) {
+            return
+        }
+
+        const nextTokenElement = createSpecialTokenNode(tokenType, selectedText)
+        range.deleteContents()
+        range.insertNode(nextTokenElement)
+        selectedTokenRef.current = nextTokenElement
+        selectionRangeRef.current = null
+        syncEditSurfaceContent()
+        closeSpecialTagMenu()
+        placeCaretAfter(nextTokenElement)
+        editSurfaceRef.current?.focus()
+    }
+
+    function getRangeFromPoint(x, y) {
+        if (document.caretPositionFromPoint) {
+            const position = document.caretPositionFromPoint(x, y)
+
+            if (!position) {
+                return null
+            }
+
+            const range = document.createRange()
+            range.setStart(position.offsetNode, position.offset)
+            range.collapse(true)
+            return range
+        }
+
+        if (document.caretRangeFromPoint) {
+            return document.caretRangeFromPoint(x, y)
+        }
+
+        return null
+    }
+
+    function getTopLevelVisualBlock(node) {
+        let currentNode =
+            node?.nodeType === Node.TEXT_NODE ? node.parentElement : node
+
+        while (currentNode && currentNode.parentNode !== editSurfaceRef.current) {
+            currentNode = currentNode.parentNode
+        }
+
+        if (
+            currentNode &&
+            currentNode.parentNode === editSurfaceRef.current &&
+            VISUAL_BLOCK_TAGS.includes(currentNode.nodeName)
+        ) {
+            return currentNode
+        }
+
+        return null
+    }
+
+    function getInsertionTarget(x, y) {
+        if (!editSurfaceRef.current) {
+            return null
+        }
+
+        const topLevelBlocks = Array.from(editSurfaceRef.current.children).filter((child) =>
+            VISUAL_BLOCK_TAGS.includes(child.nodeName)
+        )
+
+        if (topLevelBlocks.length === 0) {
+            return {
+                block: null,
+                placement: 'append',
+            }
+        }
+
+        const firstBlockRect = topLevelBlocks[0].getBoundingClientRect()
+
+        if (y < firstBlockRect.top) {
+            return {
+                block: topLevelBlocks[0],
+                placement: 'before',
+            }
+        }
+
+        for (let index = 0; index < topLevelBlocks.length; index += 1) {
+            const currentBlock = topLevelBlocks[index]
+            const currentRect = currentBlock.getBoundingClientRect()
+            const nextBlock = topLevelBlocks[index + 1]
+
+            if (y >= currentRect.top && y <= currentRect.bottom) {
+                return {
+                    block: currentBlock,
+                    placement: y < currentRect.top + currentRect.height / 2 ? 'before' : 'after',
+                }
+            }
+
+            if (!nextBlock) {
+                continue
+            }
+
+            const nextRect = nextBlock.getBoundingClientRect()
+
+            if (y > currentRect.bottom && y < nextRect.top) {
+                const gapMidpoint = currentRect.bottom + (nextRect.top - currentRect.bottom) / 2
+
+                return {
+                    block: y < gapMidpoint ? currentBlock : nextBlock,
+                    placement: y < gapMidpoint ? 'after' : 'before',
+                }
+            }
+        }
+
+        const lastBlock = topLevelBlocks[topLevelBlocks.length - 1]
+        const fallbackRange = getRangeFromPoint(x, y)
+        const fallbackBlock = fallbackRange
+            ? getTopLevelVisualBlock(fallbackRange.startContainer)
+            : null
+
+        if (fallbackBlock) {
+            const fallbackRect = fallbackBlock.getBoundingClientRect()
+
+            return {
+                block: fallbackBlock,
+                placement: y < fallbackRect.top + fallbackRect.height / 2 ? 'before' : 'after',
+            }
+        }
+
+        return {
+            block: lastBlock,
+            placement: 'after',
+        }
+    }
+
+    function insertEmptySpaceBlock() {
+        if (!editSurfaceRef.current) {
+            return
+        }
+
+        const spaceBlock = document.createElement('space-block')
+        const insertionTarget = insertionTargetRef.current
+
+        if (insertionTarget?.block) {
+            if (insertionTarget.placement === 'before') {
+                insertionTarget.block.insertAdjacentElement('beforebegin', spaceBlock)
+            } else {
+                insertionTarget.block.insertAdjacentElement('afterend', spaceBlock)
+            }
+        } else {
+            editSurfaceRef.current.append(spaceBlock)
+        }
+
+        insertionTargetRef.current = null
+        setBlockMenu((currentState) => ({
+            ...currentState,
+            insertMode: false,
+            visible: false,
+        }))
+        syncEditSurfaceContent()
+        placeCaretAfter(spaceBlock)
+        editSurfaceRef.current.focus()
+    }
+
+    function getCurrentBlockElement() {
+        const selection = window.getSelection()
+
+        if (!selection || selection.rangeCount === 0) {
+            return null
+        }
+
+        let currentNode = selection.anchorNode
+
+        while (currentNode && currentNode !== editSurfaceRef.current) {
+            if (
+                currentNode.nodeType === Node.ELEMENT_NODE &&
+                VISUAL_BLOCK_TAGS.includes(currentNode.nodeName)
+            ) {
+                return currentNode
+            }
+
+            currentNode = currentNode.parentNode
+        }
+
+        return null
+    }
+
+    function replaceBlockTag(tagName) {
+        const blockElement = hoveredBlockRef.current
+
+        if (!blockElement || !editSurfaceRef.current) {
+            return
+        }
+
+        if (blockElement.nodeName === tagName) {
+            setBlockMenu((currentState) => ({
+                ...currentState,
+                visible: false,
+            }))
+            return
+        }
+
+        const nextBlock = document.createElement(tagName.toLowerCase())
+        nextBlock.innerHTML = blockElement.innerHTML
+        blockElement.replaceWith(nextBlock)
+        hoveredBlockRef.current = nextBlock
+        setBlockMenu((currentState) => ({
+            ...currentState,
+            tagName,
+            visible: false,
+        }))
+        syncEditSurfaceContent()
+        placeCaretAtStart(nextBlock)
+        editSurfaceRef.current.focus()
+    }
+
+    function placeCaretAtStart(element) {
+        const selection = window.getSelection()
+
+        if (!selection) {
+            return
+        }
+
+        const range = document.createRange()
+        range.selectNodeContents(element)
+        range.collapse(true)
+        selection.removeAllRanges()
+        selection.addRange(range)
+    }
+
+    function placeCaretAfter(element) {
+        const selection = window.getSelection()
+
+        if (!selection) {
+            return
+        }
+
+        const range = document.createRange()
+        range.setStartAfter(element)
+        range.collapse(true)
+        selection.removeAllRanges()
+        selection.addRange(range)
+    }
+
+    function handleEditSurfaceKeyDown(event) {
+        if (event.key !== 'Enter') {
+            return
+        }
+
+        event.preventDefault()
+
+        if (event.shiftKey) {
+            document.execCommand('insertLineBreak', false)
+            syncEditSurfaceContent()
+            return
+        }
+
+        const selection = window.getSelection()
+        const currentParagraph = getCurrentBlockElement()
+
+        if (!selection || selection.rangeCount === 0 || !currentParagraph) {
+            return
+        }
+
+        const currentRange = selection.getRangeAt(0)
+        const trailingRange = currentRange.cloneRange()
+        trailingRange.setEndAfter(currentParagraph)
+        const trailingContent = trailingRange.extractContents()
+        const nextParagraph = document.createElement('p')
+
+        if (
+            trailingContent.childNodes.length === 0 ||
+            (!(trailingContent.textContent || '').trim() &&
+                !trailingContent.querySelector('br'))
+        ) {
+            nextParagraph.innerHTML = '<br />'
+        } else {
+            nextParagraph.appendChild(trailingContent)
+        }
+
+        if (!(currentParagraph.textContent || '').trim() && !currentParagraph.querySelector('br')) {
+            currentParagraph.innerHTML = '<br />'
+        }
+
+        currentParagraph.parentNode.insertBefore(nextParagraph, currentParagraph.nextSibling)
+        placeCaretAtStart(nextParagraph)
+        syncEditSurfaceContent()
+    }
+
     function focusMatch(matchIndex) {
         const match = matches[matchIndex]
 
@@ -441,35 +1038,9 @@ export function ContentPanel({
             return
         }
 
-        if (isLocked) {
-            const matchElement = readonlyMatchRefs.current[matchIndex]
-
-            if (matchElement) {
-                matchElement.scrollIntoView({
-                    block: 'center',
-                })
-            }
-
+        if (isLocked || editorMode !== 'source') {
             return
         }
-
-        if (!editorRef.current) {
-            return
-        }
-
-        const textBeforeMatch = content.slice(0, match.start)
-        const lineIndex = textBeforeMatch.split('\n').length - 1
-        const computedStyle = window.getComputedStyle(editorRef.current)
-        const lineHeight = Number.parseFloat(computedStyle.lineHeight) || 18
-        const paddingTop = Number.parseFloat(computedStyle.paddingTop) || 0
-        const targetScrollTop = Math.max(
-            lineIndex * lineHeight - editorRef.current.clientHeight / 2 + lineHeight,
-            0
-        )
-
-        editorRef.current.scrollTop = targetScrollTop + paddingTop
-        editorRef.current.focus()
-        editorRef.current.setSelectionRange(match.start, match.end)
     }
 
     function handleSearchStep(direction) {
@@ -486,57 +1057,92 @@ export function ContentPanel({
         focusMatch(nextIndex)
     }
 
-    function renderReadonlyPart(part, key) {
-        if (!part.isMatch) {
-            return <React.Fragment key={key}>{part.text}</React.Fragment>
-        }
-
-        return (
-            <span
-                key={key}
-                className={
-                    part.isActive
-                        ? 'readonly-search-match is-active'
-                        : 'readonly-search-match'
-                }
-                ref={(element) => {
-                    if (element && part.matchIndex === activeMatchIndex) {
-                        readonlyMatchRefs.current[part.matchIndex] = element
-                    }
-                }}
-            >
-                {part.text}
-            </span>
-        )
-    }
-
-    function renderReadonlySegment(segment, segmentIndex) {
-        const parts = buildSegmentParts(segment, matches, activeMatchIndex)
-
-        if (segment.type === 'text') {
-            return (
-                <React.Fragment key={`segment-${segmentIndex}`}>
-                    {parts.map((part, partIndex) =>
-                        renderReadonlyPart(part, `segment-${segmentIndex}-part-${partIndex}`)
-                    )}
-                </React.Fragment>
+    function handleEditSurfaceContextMenu(event) {
+        const targetElement =
+            event.target.nodeType === Node.TEXT_NODE ? event.target.parentElement : event.target
+        const tokenElement = targetElement?.closest('[data-token-type]')
+        const selection = window.getSelection()
+        const hasSelection =
+            !!selection &&
+            selection.rangeCount > 0 &&
+            !selection.getRangeAt(0).collapsed &&
+            editSurfaceRef.current?.contains(
+                selection.getRangeAt(0).commonAncestorContainer.nodeType === Node.TEXT_NODE
+                    ? selection.getRangeAt(0).commonAncestorContainer.parentElement
+                    : selection.getRangeAt(0).commonAncestorContainer
             )
+
+        if (tokenElement) {
+            event.preventDefault()
+            selectedTokenRef.current = tokenElement
+            selectionRangeRef.current = null
+            setSpecialTagMenu({
+                hasSelection: false,
+                tokenType: tokenElement.getAttribute('data-token-type') || '',
+                visible: true,
+                x: event.clientX,
+                y: event.clientY,
+            })
+            setBlockMenu((currentState) => ({
+                ...currentState,
+                visible: false,
+            }))
+            return
         }
 
-        return (
-            <button
-                key={`segment-${segmentIndex}`}
-                className={`readonly-token readonly-token-${segment.type}`}
-                onClick={(event) => {
-                    handleReadonlyTagClick(segment, event)
-                }}
-                type="button"
-            >
-                {parts.map((part, partIndex) =>
-                    renderReadonlyPart(part, `segment-${segmentIndex}-part-${partIndex}`)
-                )}
-            </button>
-        )
+        if (hasSelection) {
+            event.preventDefault()
+            selectedTokenRef.current = null
+            selectionRangeRef.current = selection.getRangeAt(0).cloneRange()
+            setSpecialTagMenu({
+                hasSelection: true,
+                tokenType: '',
+                visible: true,
+                x: event.clientX,
+                y: event.clientY,
+            })
+            setBlockMenu((currentState) => ({
+                ...currentState,
+                visible: false,
+            }))
+            return
+        }
+
+        const blockElement = targetElement?.closest('p, h1, pre')
+
+        if (!blockElement || !editSurfaceRef.current?.contains(blockElement)) {
+            if (!editSurfaceRef.current?.contains(targetElement)) {
+                return
+            }
+
+            event.preventDefault()
+            hoveredBlockRef.current = null
+            selectedTokenRef.current = null
+            selectionRangeRef.current = null
+            insertionTargetRef.current = getInsertionTarget(event.clientX, event.clientY)
+            setBlockMenu({
+                insertMode: true,
+                tagName: '',
+                x: event.clientX,
+                y: event.clientY,
+                visible: true,
+            })
+            setSpecialTagMenu((currentState) => ({
+                ...currentState,
+                visible: false,
+            }))
+            return
+        }
+
+        event.preventDefault()
+        hoveredBlockRef.current = blockElement
+        setBlockMenu({
+            insertMode: false,
+            tagName: blockElement.nodeName,
+            x: event.clientX,
+            y: event.clientY,
+            visible: true,
+        })
     }
 
     return (
@@ -679,8 +1285,70 @@ export function ContentPanel({
                     </button>
                 </div>
             ) : null}
+            {specialTagMenu.visible ? (
+                <div
+                    className="tab-context-menu visual-block-context-menu"
+                    ref={specialTagMenuRef}
+                    style={{
+                        left: specialTagMenu.x,
+                        top: specialTagMenu.y,
+                    }}
+                >
+                    {SPECIAL_TAG_OPTIONS.map((option) => (
+                        <button
+                            key={option.tokenType}
+                            className={
+                                option.tokenType === specialTagMenu.tokenType
+                                    ? 'tab-context-menu-item visual-block-menu-item is-active'
+                                    : 'tab-context-menu-item visual-block-menu-item'
+                            }
+                            onMouseDown={(event) => {
+                                event.preventDefault()
+                                if (specialTagMenu.hasSelection) {
+                                    convertSelectionToSpecialTag(option.tokenType)
+                                    return
+                                }
+
+                                convertSelectedToken(option.tokenType)
+                            }}
+                            type="button"
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                    <button
+                        className="tab-context-menu-item visual-block-menu-item"
+                        disabled={specialTagMenu.hasSelection}
+                        onMouseDown={(event) => {
+                            event.preventDefault()
+                            clearSelectedSpecialToken()
+                        }}
+                        type="button"
+                    >
+                        Clear Special Tag
+                    </button>
+                </div>
+            ) : null}
             {activeFile ? (
-                <div className="editor-shell">
+                <div
+                    className={[
+                        'editor-shell',
+                        'is-single-column',
+                        isLocked ? 'is-readonly-mode' : '',
+                        !isLocked && editorMode === 'visual' ? 'is-visual-mode' : '',
+                        !isLocked && editorMode === 'source' ? 'is-source-mode' : '',
+                    ]
+                        .filter(Boolean)
+                        .join(' ')}
+                >
+                    {!isLocked && editorMode === 'visual' ? (
+                        <div className="content-readonly-frame" aria-hidden="true">
+                            <span className="content-readonly-corner corner-top-left" />
+                            <span className="content-readonly-corner corner-top-right" />
+                            <span className="content-readonly-corner corner-bottom-left" />
+                            <span className="content-readonly-corner corner-bottom-right" />
+                        </div>
+                    ) : null}
                     {isSearchOpen ? (
                         <div className="content-search content-search-inline">
                             <input
@@ -725,58 +1393,161 @@ export function ContentPanel({
                             </button>
                         </div>
                     ) : null}
-                    <div className="line-numbers" ref={lineNumbersRef}>
-                        {lineNumbers.map((lineNumber) => (
-                            <div key={lineNumber} className="line-number">
-                                {lineNumber}
-                            </div>
-                        ))}
-                    </div>
-                    {isLocked ? (
-                        <>
-                            <div
-                                className="content-readonly"
-                                onKeyDown={handleReadonlyKeyDown}
-                                onScroll={(event) => {
-                                    if (lineNumbersRef.current) {
-                                        lineNumbersRef.current.scrollTop =
-                                            event.target.scrollTop
-                                    }
-                                }}
-                                ref={readonlyContentRef}
-                                tabIndex={0}
+                    {!isLocked ? (
+                        <div className="content-mode-switch" role="tablist" aria-label="Editor mode">
+                            <button
+                                className={
+                                    editorMode === 'visual'
+                                        ? 'content-mode-button is-active'
+                                        : 'content-mode-button'
+                                }
+                                onClick={() => setEditorMode('visual')}
+                                role="tab"
+                                type="button"
                             >
-                                {readonlySegments.map((segment, index) =>
-                                    renderReadonlySegment(segment, index)
-                                )}
-                            </div>
-                            {readonlyCopyBubble ? (
+                                Visual
+                            </button>
+                            <button
+                                className={
+                                    editorMode === 'source'
+                                        ? 'content-mode-button is-active'
+                                        : 'content-mode-button'
+                                }
+                                onClick={() => setEditorMode('source')}
+                                role="tab"
+                                type="button"
+                            >
+                                Source
+                            </button>
+                        </div>
+                    ) : null}
+                    {isLocked ? (
+                        <div
+                            className="content-readonly html-content-surface"
+                            dangerouslySetInnerHTML={{ __html: decoratedHtmlContent }}
+                            onClick={handleSpecialTokenClick}
+                            onKeyDown={handleReadonlyKeyDown}
+                            ref={readonlyContentRef}
+                            tabIndex={0}
+                        />
+                    ) : editorMode === 'visual' ? (
+                        <>
+                            {blockMenu.visible ? (
                                 <div
-                                    className="readonly-copy-bubble"
+                                    className="tab-context-menu visual-block-context-menu"
+                                    ref={blockMenuRef}
                                     style={{
-                                        left: `${readonlyCopyBubble.x}px`,
-                                        top: `${readonlyCopyBubble.y}px`,
+                                        left: blockMenu.x,
+                                        top: blockMenu.y,
                                     }}
                                 >
-                                    {readonlyCopyBubble.label}
+                                    {blockMenu.insertMode ? (
+                                        <button
+                                            className="tab-context-menu-item visual-block-menu-item"
+                                            onClick={insertEmptySpaceBlock}
+                                            type="button"
+                                        >
+                                            Add Empty Space Block
+                                        </button>
+                                    ) : (
+                                        BLOCK_TYPE_OPTIONS.map((option) => (
+                                            <button
+                                                key={option.tagName}
+                                                className={
+                                                    option.tagName === blockMenu.tagName
+                                                        ? 'tab-context-menu-item visual-block-menu-item is-active'
+                                                        : 'tab-context-menu-item visual-block-menu-item'
+                                                }
+                                                onClick={() => replaceBlockTag(option.tagName)}
+                                                type="button"
+                                            >
+                                                {option.label}
+                                            </button>
+                                        ))
+                                    )}
                                 </div>
                             ) : null}
+                            <div
+                                ref={editSurfaceRef}
+                                className="content-edit-surface html-content-surface"
+                                contentEditable
+                                onClick={handleSpecialTokenClick}
+                                onInput={syncEditSurfaceContent}
+                                onContextMenu={handleEditSurfaceContextMenu}
+                                onKeyDown={handleEditSurfaceKeyDown}
+                                spellCheck={false}
+                                suppressContentEditableWarning
+                            />
                         </>
                     ) : (
-                        <textarea
-                            ref={editorRef}
-                            className="content-editor"
-                            onChange={(event) => onChangeContent(event.target.value)}
-                            onScroll={(event) => {
-                                if (lineNumbersRef.current) {
-                                    lineNumbersRef.current.scrollTop =
-                                        event.target.scrollTop
-                                }
+                        <CodeMirror
+                            basicSetup={{
+                                foldGutter: false,
+                                highlightActiveLine: false,
+                                highlightActiveLineGutter: false,
                             }}
-                            spellCheck={false}
+                            className="content-code-editor"
+                            extensions={[
+                                htmlLanguage(),
+                                Prec.highest(syntaxHighlighting(htmlSourceHighlightStyle)),
+                            ]}
+                            height="100%"
+                            onChange={(value) => onChangeContent(value)}
+                            theme={oneDark}
                             value={content}
                         />
                     )}
+                    {copyBubble ? (
+                        <div
+                            className="readonly-copy-bubble"
+                            style={{
+                                left: `${copyBubble.x}px`,
+                                top: `${copyBubble.y}px`,
+                            }}
+                        >
+                            {copyBubble.label}
+                        </div>
+                    ) : null}
+                    {!isLocked && activeState?.isDirty ? (
+                        <div className="content-discard-control">
+                            {isDiscardConfirmOpen ? (
+                                <div className="content-discard-popover" role="dialog">
+                                    <p className="content-discard-text">
+                                        Discard unsaved changes?
+                                    </p>
+                                    <div className="content-discard-actions">
+                                        <button
+                                            className="content-discard-button danger"
+                                            onClick={() => {
+                                                onDiscardChanges(activeFile)
+                                                setIsDiscardConfirmOpen(false)
+                                            }}
+                                            type="button"
+                                        >
+                                            Discard
+                                        </button>
+                                        <button
+                                            className="content-discard-button"
+                                            onClick={() => setIsDiscardConfirmOpen(false)}
+                                            type="button"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : null}
+                            <button
+                                aria-label="Discard unsaved changes"
+                                className="content-discard-trigger"
+                                onClick={() =>
+                                    setIsDiscardConfirmOpen((currentState) => !currentState)
+                                }
+                                type="button"
+                            >
+                                <i className="fa-solid fa-rotate-left" aria-hidden="true" />
+                            </button>
+                        </div>
+                    ) : null}
                 </div>
             ) : (
                 <p className="message">No files found in local-data.</p>

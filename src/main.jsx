@@ -17,6 +17,7 @@ function getDefaultEditorState() {
         isDirty: false,
         isLoaded: false,
         isLocked: true,
+        lastSavedContent: '',
         status: '',
     }
 }
@@ -137,6 +138,116 @@ function formatContentForExport(content) {
 
         return value
     })
+}
+
+function escapeHtml(text) {
+    return text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+}
+
+function escapeHtmlAttribute(text) {
+    return escapeHtml(text).replaceAll('"', '&quot;')
+}
+
+function formatInlineChildren(node) {
+    return Array.from(node.childNodes)
+        .map((childNode) => formatHtmlNode(childNode, 0))
+        .join('')
+}
+
+function formatBlockNode(tagName, node, indentLevel = 0) {
+    const indent = '  '.repeat(indentLevel)
+    const innerContent = Array.from(node.childNodes)
+        .map((childNode) => formatHtmlNode(childNode, indentLevel + 1))
+        .join('')
+
+    const normalizedInner = innerContent.trim() || '<br />'
+    const compactBlockTags = ['p', 'blockquote', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+
+    if (normalizedInner === '<br />') {
+        return ''
+    }
+
+    if (compactBlockTags.includes(tagName)) {
+        return `${indent}<${tagName}>${normalizedInner}</${tagName}>`
+    }
+
+    if (!normalizedInner.includes('\n')) {
+        return `${indent}<${tagName}>${normalizedInner}</${tagName}>`
+    }
+
+    const nestedIndent = '  '.repeat(indentLevel + 1)
+
+    return [
+        `${indent}<${tagName}>`,
+        normalizedInner
+            .split('\n')
+            .map((line) => `${nestedIndent}${line}`)
+            .join('\n'),
+        `${indent}</${tagName}>`,
+    ].join('\n')
+}
+
+function formatHtmlNode(node, indentLevel = 0) {
+    if (node.nodeType === Node.TEXT_NODE) {
+        return escapeHtml(node.textContent || '')
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+        return ''
+    }
+
+    const tagName = node.nodeName.toLowerCase()
+
+    if (tagName === 'span') {
+        return formatInlineChildren(node)
+    }
+
+    if (tagName === 'space-block') {
+        return `${'  '.repeat(indentLevel)}<space-block></space-block>`
+    }
+
+    if (tagName === 'br') {
+        return '<br />'
+    }
+
+    if (tagName === 'a') {
+        const href = node.getAttribute('href') || ''
+        return `<a href="${escapeHtmlAttribute(href)}">${formatInlineChildren(node)}</a>`
+    }
+
+    if (['strong', 'em', 'b', 'i', 'u', 'code'].includes(tagName)) {
+        return `<${tagName}>${formatInlineChildren(node)}</${tagName}>`
+    }
+
+    if (['p', 'blockquote', 'pre', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
+        return formatBlockNode(tagName, node, indentLevel)
+    }
+
+    if (tagName === 'div') {
+        return formatBlockNode('p', node, indentLevel)
+    }
+
+    return formatInlineChildren(node)
+}
+
+function prettifyHtml(content) {
+    if (typeof document === 'undefined') {
+        return content.trim()
+    }
+
+    const container = document.createElement('div')
+    container.innerHTML = content
+
+    const formatted = Array.from(container.childNodes)
+        .map((node) => formatHtmlNode(node, 0))
+        .filter(Boolean)
+        .join('\n')
+        .trim()
+
+    return formatted || '<p><br /></p>'
 }
 
 function buildCombinedOpenTabsContent(openTabs, editorStates) {
@@ -394,6 +505,7 @@ function App() {
                             isDirty: false,
                             isLoaded: true,
                             isLocked: true,
+                            lastSavedContent: nextContent,
                             status: '',
                         },
                     }))
@@ -411,6 +523,7 @@ function App() {
                             isDirty: false,
                             isLoaded: true,
                             isLocked: true,
+                            lastSavedContent: '',
                             status: '',
                         },
                     }))
@@ -476,15 +589,19 @@ function App() {
             return
         }
 
+        const formattedContent = prettifyHtml(nextState.content)
+
         try {
-            await window.localFiles.write(fileName, nextState.content)
+            await window.localFiles.write(fileName, formattedContent)
             setEditorStates((currentStates) => ({
                 ...currentStates,
                 [fileName]: {
                     ...(currentStates[fileName] || getDefaultEditorState()),
+                    content: formattedContent,
                     error: '',
                     isDirty: false,
                     isLocked: true,
+                    lastSavedContent: formattedContent,
                     status: 'Saved',
                 },
             }))
@@ -538,6 +655,7 @@ function App() {
                 [fileName]: {
                     ...getDefaultEditorState(),
                     isLoaded: true,
+                    lastSavedContent: '',
                     status: `Created ${fileName}`,
                 },
             }))
@@ -815,6 +933,28 @@ function App() {
         } finally {
             setIsSettingUp(false)
         }
+    }
+
+    function handleDiscardChanges(fileName) {
+        if (!fileName) {
+            return
+        }
+
+        setEditorStates((currentStates) => {
+            const currentState = currentStates[fileName] || getDefaultEditorState()
+            const revertedContent = currentState.lastSavedContent || ''
+
+            return {
+                ...currentStates,
+                [fileName]: {
+                    ...currentState,
+                    content: revertedContent,
+                    error: '',
+                    isDirty: false,
+                    status: 'Reverted',
+                },
+            }
+        })
     }
 
     if (isDataDirectoryReady === null) {
@@ -1121,18 +1261,24 @@ function App() {
                 onCloseOtherTabs={handleCloseOtherTabs}
                 onCloseTabsToRight={handleCloseTabsToRight}
                 onChangeContent={(nextContent) => {
-                    setEditorStates((currentStates) => ({
-                        ...currentStates,
-                        [activeFile]: {
-                            ...(currentStates[activeFile] || getDefaultEditorState()),
-                            content: nextContent,
-                            error: '',
-                            isDirty: true,
-                            isLoaded: true,
-                            status: '',
-                        },
-                    }))
+                    setEditorStates((currentStates) => {
+                        const currentState =
+                            currentStates[activeFile] || getDefaultEditorState()
+
+                        return {
+                            ...currentStates,
+                            [activeFile]: {
+                                ...currentState,
+                                content: nextContent,
+                                error: '',
+                                isDirty: nextContent !== (currentState.lastSavedContent || ''),
+                                isLoaded: true,
+                                status: '',
+                            },
+                        }
+                    })
                 }}
+                onDiscardChanges={handleDiscardChanges}
                 editorStates={editorStates}
                 openTabs={openTabs}
                 onReorderTabs={handleReorderTabs}
