@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import icon from './assets/icon.png'
 import { ContentPanel } from './components/ContentPanel'
@@ -25,6 +25,28 @@ function getNextOpenTab(tabFiles, removedFile) {
     return tabFiles.find((fileName) => fileName !== removedFile) || ''
 }
 
+function getPathBaseName(entryPath) {
+    return entryPath.split('/').pop() || entryPath
+}
+
+function getParentPath(entryPath) {
+    const pathParts = entryPath.split('/')
+    pathParts.pop()
+    return pathParts.join('/')
+}
+
+function isSameOrDescendantPath(candidatePath, entryPath) {
+    return candidatePath === entryPath || candidatePath.startsWith(`${entryPath}/`)
+}
+
+function remapPath(candidatePath, sourcePath, targetPath) {
+    if (!isSameOrDescendantPath(candidatePath, sourcePath)) {
+        return candidatePath
+    }
+
+    return `${targetPath}${candidatePath.slice(sourcePath.length)}`
+}
+
 function reorderTabs(tabFiles, draggedFile, targetFile, placement = 'before') {
     if (!draggedFile || !targetFile || draggedFile === targetFile) {
         return tabFiles
@@ -46,10 +68,12 @@ function reorderTabs(tabFiles, draggedFile, targetFile, placement = 'before') {
     return nextTabs
 }
 
-function getNextUntitledFileName(fileNames) {
+function getNextUntitledFileName(fileNames, parentPath = '') {
     const baseName = 'untitled'
     const extension = '.txt'
-    const firstChoice = `${baseName}${extension}`
+    const firstChoice = parentPath
+        ? `${parentPath}/${baseName}${extension}`
+        : `${baseName}${extension}`
 
     if (!fileNames.includes(firstChoice)) {
         return firstChoice
@@ -57,11 +81,43 @@ function getNextUntitledFileName(fileNames) {
 
     let index = 2
 
-    while (fileNames.includes(`${baseName}-${index}${extension}`)) {
+    while (
+        fileNames.includes(
+            parentPath
+                ? `${parentPath}/${baseName}-${index}${extension}`
+                : `${baseName}-${index}${extension}`
+        )
+    ) {
         index += 1
     }
 
-    return `${baseName}-${index}${extension}`
+    return parentPath
+        ? `${parentPath}/${baseName}-${index}${extension}`
+        : `${baseName}-${index}${extension}`
+}
+
+function getNextUntitledFolderName(entries, parentPath = '') {
+    const baseName = 'untitled-folder'
+    const folderPaths = entries
+        .filter((entry) => entry.type === 'directory')
+        .map((entry) => entry.path)
+    const firstChoice = parentPath ? `${parentPath}/${baseName}` : baseName
+
+    if (!folderPaths.includes(firstChoice)) {
+        return firstChoice
+    }
+
+    let index = 2
+
+    while (
+        folderPaths.includes(
+            parentPath ? `${parentPath}/${baseName}-${index}` : `${baseName}-${index}`
+        )
+    ) {
+        index += 1
+    }
+
+    return parentPath ? `${parentPath}/${baseName}-${index}` : `${baseName}-${index}`
 }
 
 function formatContentForExport(content) {
@@ -106,11 +162,10 @@ async function searchAcrossFiles(query) {
 
 function App() {
     const historyPageSize = 30
-    const [files, setFiles] = useState([])
+    const [entries, setEntries] = useState([])
     const [activeFile, setActiveFile] = useState('')
     const [openTabs, setOpenTabs] = useState([])
     const [editorStates, setEditorStates] = useState({})
-    const [deleteUnlockedFile, setDeleteUnlockedFile] = useState('')
     const [editingFileName, setEditingFileName] = useState('')
     const [isDataDirectoryReady, setIsDataDirectoryReady] = useState(null)
     const [isSettingUp, setIsSettingUp] = useState(false)
@@ -130,6 +185,14 @@ function App() {
     const [historyTotal, setHistoryTotal] = useState(0)
     const [isCopyPreviewOpen, setIsCopyPreviewOpen] = useState(false)
     const [isAboutOpen, setIsAboutOpen] = useState(false)
+    const files = useMemo(
+        () =>
+            entries
+                .filter((entry) => entry.type === 'file')
+                .map((entry) => entry.path)
+                .sort((a, b) => a.localeCompare(b)),
+        [entries]
+    )
 
     const activeState = activeFile
         ? editorStates[activeFile] || getDefaultEditorState()
@@ -247,13 +310,16 @@ function App() {
 
         async function loadFiles() {
             try {
-                const nextFiles = await window.localFiles.list()
+                const nextEntries = await window.localFiles.list()
+                const nextFiles = nextEntries
+                    .filter((entry) => entry.type === 'file')
+                    .map((entry) => entry.path)
 
                 if (cancelled) {
                     return
                 }
 
-                setFiles(nextFiles)
+                setEntries(nextEntries)
 
                 if (nextFiles.length > 0) {
                     openFile(nextFiles[0])
@@ -261,7 +327,6 @@ function App() {
                     setActiveFile('')
                     setOpenTabs([])
                     setEditorStates({})
-                    setDeleteUnlockedFile('')
                     setEditingFileName('')
                     setIsSidebarSearchOpen(false)
                     setRenameDraft('')
@@ -317,7 +382,6 @@ function App() {
                             status: '',
                         },
                     }))
-                    setDeleteUnlockedFile('')
                     setEditingFileName('')
                     setRenameDraft('')
                 }
@@ -335,7 +399,6 @@ function App() {
                             status: '',
                         },
                     }))
-                    setDeleteUnlockedFile('')
                     setEditingFileName('')
                     setRenameDraft('')
                 }
@@ -423,9 +486,12 @@ function App() {
         }
     }
 
-    async function refreshFiles(nextSelectedFile = activeFile) {
-        const nextFiles = await window.localFiles.list()
-        setFiles(nextFiles)
+    async function refreshEntries(nextSelectedFile = activeFile) {
+        const nextEntries = await window.localFiles.list()
+        const nextFiles = nextEntries
+            .filter((entry) => entry.type === 'file')
+            .map((entry) => entry.path)
+        setEntries(nextEntries)
 
         if (nextSelectedFile && nextFiles.includes(nextSelectedFile)) {
             openFile(nextSelectedFile)
@@ -441,12 +507,13 @@ function App() {
         setOpenTabs([])
     }
 
-    async function handleCreateFile() {
-        const fileName = getNextUntitledFileName(files)
+    async function handleCreateFile(parentPath = null) {
+        const nextParentPath =
+            parentPath === null ? (activeFile ? getParentPath(activeFile) : '') : parentPath
+        const fileName = getNextUntitledFileName(files, nextParentPath)
 
         try {
             await window.localFiles.create(fileName)
-            setDeleteUnlockedFile('')
             setEditingFileName('')
             setIsSidebarSearchOpen(false)
             setRenameDraft('')
@@ -460,7 +527,7 @@ function App() {
                 },
             }))
             await refreshSidebarSearch()
-            await refreshFiles(fileName)
+            await refreshEntries(fileName)
         } catch (createError) {
             setEditorStates((currentStates) => ({
                 ...currentStates,
@@ -473,101 +540,139 @@ function App() {
         }
     }
 
-    async function handleDeleteFile(fileName) {
-        if (deleteUnlockedFile !== fileName) {
-            return
-        }
-
-        const shouldDelete = window.confirm(`Delete ${fileName}?`)
-
-        if (!shouldDelete) {
-            return
-        }
+    async function handleCreateFolder(parentPath = null) {
+        const baseFolderPath =
+            parentPath === null ? (activeFile ? getParentPath(activeFile) : '') : parentPath
+        const nextFolderPath = getNextUntitledFolderName(entries, baseFolderPath)
 
         try {
-            await window.localFiles.delete(fileName)
-            setDeleteUnlockedFile('')
-            setEditingFileName('')
-            setIsSidebarSearchOpen(false)
-            setRenameDraft('')
-            setSidebarSearchQuery('')
-            setEditorStates((currentStates) => {
-                const nextStates = { ...currentStates }
-                delete nextStates[fileName]
-                return nextStates
-            })
-            setOpenTabs((currentTabs) =>
-                currentTabs.filter((tabFileName) => tabFileName !== fileName)
-            )
-            setSidebarSearchResults((currentResults) =>
-                currentResults.filter((result) => result.fileName !== fileName)
-            )
-            await refreshSidebarSearch()
-            await refreshFiles(getNextSelectedFile(files, fileName))
-        } catch (deleteError) {
+            await window.localFiles.createFolder(nextFolderPath)
+            await refreshEntries(activeFile)
+        } catch (createError) {
             setEditorStates((currentStates) => ({
                 ...currentStates,
                 [activeFile]: {
                     ...(currentStates[activeFile] || getDefaultEditorState()),
-                    error: deleteError.message || `Failed to delete ${fileName}.`,
+                    error: createError.message || 'Failed to create folder.',
                     status: '',
                 },
             }))
         }
     }
 
-    async function handleRenameFile(oldFileName) {
-        if (!oldFileName) {
+    async function handleDeleteEntry(entryPath) {
+        const shouldDelete = window.confirm(`Delete ${entryPath}?`)
+
+        if (!shouldDelete) {
+            return
+        }
+
+        try {
+            await window.localFiles.delete(entryPath)
+            setEditingFileName('')
+            setIsSidebarSearchOpen(false)
+            setRenameDraft('')
+            setSidebarSearchQuery('')
+            setEditorStates((currentStates) => {
+                const nextStates = { ...currentStates }
+                Object.keys(nextStates).forEach((statePath) => {
+                    if (isSameOrDescendantPath(statePath, entryPath)) {
+                        delete nextStates[statePath]
+                    }
+                })
+                return nextStates
+            })
+            setOpenTabs((currentTabs) =>
+                currentTabs.filter((tabFileName) => !isSameOrDescendantPath(tabFileName, entryPath))
+            )
+            setSidebarSearchResults((currentResults) =>
+                currentResults.filter(
+                    (result) => !isSameOrDescendantPath(result.fileName, entryPath)
+                )
+            )
+            await refreshSidebarSearch()
+            await refreshEntries(
+                activeFile && isSameOrDescendantPath(activeFile, entryPath)
+                    ? getNextSelectedFile(
+                          files.filter(
+                              (fileName) => !isSameOrDescendantPath(fileName, entryPath)
+                          ),
+                          ''
+                      )
+                    : activeFile
+            )
+        } catch (deleteError) {
+            setEditorStates((currentStates) => ({
+                ...currentStates,
+                [activeFile]: {
+                    ...(currentStates[activeFile] || getDefaultEditorState()),
+                    error: deleteError.message || `Failed to delete ${entryPath}.`,
+                    status: '',
+                },
+            }))
+        }
+    }
+
+    async function handleRenameEntry(oldEntryPath) {
+        if (!oldEntryPath) {
             setEditingFileName('')
             setRenameDraft('')
             return
         }
 
-        const nextFileName = renameDraft.trim()
+        const nextBaseName = renameDraft.trim()
+        const nextEntryPath = getParentPath(oldEntryPath)
+            ? `${getParentPath(oldEntryPath)}/${nextBaseName}`
+            : nextBaseName
 
-        if (nextFileName === '' || nextFileName === oldFileName) {
+        if (nextBaseName === '' || nextEntryPath === oldEntryPath) {
             setEditingFileName('')
             setRenameDraft('')
             return
         }
 
         try {
-            await window.localFiles.rename(oldFileName, nextFileName)
+            await window.localFiles.rename(oldEntryPath, nextEntryPath)
 
-            setFiles((currentFiles) =>
-                currentFiles
-                    .map((fileName) =>
-                        fileName === oldFileName ? nextFileName : fileName
-                    )
-                    .sort((a, b) => a.localeCompare(b))
+            setEntries((currentEntries) =>
+                currentEntries.map((entry) =>
+                    isSameOrDescendantPath(entry.path, oldEntryPath)
+                        ? { ...entry, path: remapPath(entry.path, oldEntryPath, nextEntryPath) }
+                        : entry
+                )
             )
             setOpenTabs((currentTabs) =>
                 currentTabs.map((fileName) =>
-                    fileName === oldFileName ? nextFileName : fileName
+                    remapPath(fileName, oldEntryPath, nextEntryPath)
                 )
             )
             setEditorStates((currentStates) => {
-                const nextStates = { ...currentStates }
-                nextStates[nextFileName] =
-                    nextStates[oldFileName] || getDefaultEditorState()
-                delete nextStates[oldFileName]
+                const nextStates = {}
+
+                Object.entries(currentStates).forEach(([statePath, stateValue]) => {
+                    nextStates[remapPath(statePath, oldEntryPath, nextEntryPath)] = stateValue
+                })
+
                 return nextStates
             })
             setSidebarSearchResults((currentResults) =>
                 currentResults.map((result) =>
-                    result.fileName === oldFileName
-                        ? { ...result, fileName: nextFileName }
+                    isSameOrDescendantPath(result.fileName, oldEntryPath)
+                        ? {
+                              ...result,
+                              fileName: remapPath(
+                                  result.fileName,
+                                  oldEntryPath,
+                                  nextEntryPath
+                              ),
+                          }
                         : result
                 )
             )
             await refreshSidebarSearch()
 
-            if (activeFile === oldFileName) {
-                setActiveFile(nextFileName)
-            }
-
-            if (deleteUnlockedFile === oldFileName) {
-                setDeleteUnlockedFile('')
+            if (activeFile && isSameOrDescendantPath(activeFile, oldEntryPath)) {
+                setActiveFile(remapPath(activeFile, oldEntryPath, nextEntryPath))
             }
 
             setEditingFileName('')
@@ -577,7 +682,62 @@ function App() {
                 ...currentStates,
                 [activeFile]: {
                     ...(currentStates[activeFile] || getDefaultEditorState()),
-                    error: renameError.message || `Failed to rename ${oldFileName}.`,
+                    error: renameError.message || `Failed to rename ${oldEntryPath}.`,
+                    status: '',
+                },
+            }))
+        }
+    }
+
+    async function handleMoveFile(fileName, targetFolderPath) {
+        const fileBaseName = getPathBaseName(fileName)
+        const nextFilePath = targetFolderPath
+            ? `${targetFolderPath}/${fileBaseName}`
+            : fileBaseName
+
+        if (nextFilePath === fileName) {
+            return
+        }
+
+        try {
+            await window.localFiles.rename(fileName, nextFilePath)
+            setEntries((currentEntries) =>
+                currentEntries.map((entry) =>
+                    entry.path === fileName ? { ...entry, path: nextFilePath } : entry
+                )
+            )
+            setOpenTabs((currentTabs) =>
+                currentTabs.map((openTab) =>
+                    openTab === fileName ? nextFilePath : openTab
+                )
+            )
+            setEditorStates((currentStates) => {
+                const nextStates = { ...currentStates }
+                nextStates[nextFilePath] =
+                    nextStates[fileName] || getDefaultEditorState()
+                delete nextStates[fileName]
+                return nextStates
+            })
+            setSidebarSearchResults((currentResults) =>
+                currentResults.map((result) =>
+                    result.fileName === fileName
+                        ? { ...result, fileName: nextFilePath }
+                        : result
+                )
+            )
+
+            if (activeFile === fileName) {
+                setActiveFile(nextFilePath)
+            }
+
+            await refreshSidebarSearch()
+            await refreshEntries(activeFile === fileName ? nextFilePath : activeFile)
+        } catch (moveError) {
+            setEditorStates((currentStates) => ({
+                ...currentStates,
+                [activeFile]: {
+                    ...(currentStates[activeFile] || getDefaultEditorState()),
+                    error: moveError.message || `Failed to move ${fileName}.`,
                     status: '',
                 },
             }))
@@ -662,9 +822,8 @@ function App() {
     return (
         <main className="app-shell">
             <Sidebar
-                deleteUnlockedFile={deleteUnlockedFile}
                 editingFileName={editingFileName}
-                files={files}
+                entries={entries}
                 isAboutOpen={isAboutOpen}
                 isHistoryOpen={isHistoryOpen}
                 isUsageLookupOpen={isUsageLookupOpen}
@@ -679,7 +838,9 @@ function App() {
                     setIsCopyPreviewOpen(true)
                 }}
                 onCreateFile={handleCreateFile}
-                onDeleteFile={handleDeleteFile}
+                onCreateFolder={handleCreateFolder}
+                onDeleteEntry={handleDeleteEntry}
+                onMoveFile={handleMoveFile}
                 openFileCount={openTabs.length}
                 onSelectSearchResult={(result) => {
                     setContentSearchJump({
@@ -696,14 +857,10 @@ function App() {
                     setRenameDraft('')
                 }}
                 onRenameChange={setRenameDraft}
-                onRenameCommit={handleRenameFile}
-                onRenameStart={(fileName) => {
-                    if (deleteUnlockedFile !== fileName) {
-                        return
-                    }
-
-                    setEditingFileName(fileName)
-                    setRenameDraft(fileName)
+                onRenameCommit={handleRenameEntry}
+                onRenameStart={(entryPath) => {
+                    setEditingFileName(entryPath)
+                    setRenameDraft(getPathBaseName(entryPath))
                 }}
                 onSelectFile={openFile}
                 onToggleSidebarSearch={() => {
@@ -711,11 +868,6 @@ function App() {
                     setSidebarSearchQuery('')
                     setSidebarSearchResults([])
                 }}
-                onToggleDeleteLock={(fileName) =>
-                    setDeleteUnlockedFile((current) =>
-                        current === fileName ? '' : fileName
-                    )
-                }
                 renameDraft={renameDraft}
                 searchResults={sidebarSearchResults}
                 sidebarSearchQuery={sidebarSearchQuery}

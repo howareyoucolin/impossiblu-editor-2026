@@ -72,17 +72,36 @@ function setupDataDirectory() {
     }
 }
 
-function resolveLocalFilePath(fileName) {
-    const dataDirectory = getDataDirectory()
-    if (
-        typeof fileName !== 'string' ||
-        fileName.trim() === '' ||
-        fileName !== path.basename(fileName)
-    ) {
-        throw new Error('Invalid file name')
+function normalizeRelativeLocalPath(entryPath) {
+    if (typeof entryPath !== 'string') {
+        throw new Error('Invalid path')
     }
 
-    const filePath = path.join(dataDirectory, fileName)
+    const trimmedPath = entryPath.trim().replace(/\\/g, '/')
+
+    if (trimmedPath === '') {
+        throw new Error('Invalid path')
+    }
+
+    const normalizedPath = path.posix.normalize(trimmedPath)
+
+    if (
+        normalizedPath === '.' ||
+        normalizedPath === '..' ||
+        normalizedPath.startsWith('../') ||
+        normalizedPath.includes('/../') ||
+        path.posix.isAbsolute(normalizedPath)
+    ) {
+        throw new Error('Invalid path')
+    }
+
+    return normalizedPath
+}
+
+function resolveLocalFilePath(fileName) {
+    const dataDirectory = getDataDirectory()
+    const normalizedPath = normalizeRelativeLocalPath(fileName)
+    const filePath = path.join(dataDirectory, normalizedPath)
     const relativePath = path.relative(dataDirectory, filePath)
 
     if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
@@ -92,17 +111,60 @@ function resolveLocalFilePath(fileName) {
     return filePath
 }
 
-function listLocalFiles() {
+function listLocalEntries() {
     const dataDirectory = getDataDirectory()
+    const entries = []
+
     if (!fs.existsSync(dataDirectory)) {
-        return []
+        return entries
     }
 
-    return fs
-        .readdirSync(dataDirectory, { withFileTypes: true })
-        .filter((entry) => entry.isFile())
-        .map((entry) => entry.name)
-        .sort((a, b) => a.localeCompare(b))
+    function visitDirectory(currentDirectory, parentPath = '') {
+        const childEntries = fs
+            .readdirSync(currentDirectory, { withFileTypes: true })
+            .filter((entry) => entry.name !== '.git')
+            .sort((leftEntry, rightEntry) => {
+                if (leftEntry.isDirectory() && !rightEntry.isDirectory()) {
+                    return -1
+                }
+
+                if (!leftEntry.isDirectory() && rightEntry.isDirectory()) {
+                    return 1
+                }
+
+                return leftEntry.name.localeCompare(rightEntry.name)
+            })
+
+        childEntries.forEach((entry) => {
+            const entryPath = parentPath ? `${parentPath}/${entry.name}` : entry.name
+
+            if (entry.isDirectory()) {
+                entries.push({
+                    path: entryPath,
+                    type: 'directory',
+                })
+                visitDirectory(path.join(currentDirectory, entry.name), entryPath)
+                return
+            }
+
+            if (entry.isFile()) {
+                entries.push({
+                    path: entryPath,
+                    type: 'file',
+                })
+            }
+        })
+    }
+
+    visitDirectory(dataDirectory)
+
+    return entries
+}
+
+function listLocalFiles() {
+    return listLocalEntries()
+        .filter((entry) => entry.type === 'file')
+        .map((entry) => entry.path)
 }
 
 function readLocalFile(fileName) {
@@ -196,6 +258,7 @@ function getRecentCommitMessages(page = 1, limit = 30) {
 
 function writeLocalFile(fileName, content) {
     const filePath = resolveLocalFilePath(fileName)
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
     fs.writeFileSync(filePath, content, 'utf8')
 }
 
@@ -209,17 +272,51 @@ function createLocalFile(fileName) {
         throw new Error('File already exists')
     }
 
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
     fs.writeFileSync(filePath, '', 'utf8')
 }
 
-function deleteLocalFile(fileName) {
-    const filePath = resolveLocalFilePath(fileName)
+function createLocalFolder(folderPath) {
+    const targetFolderPath = resolveLocalFilePath(folderPath)
 
-    if (!fs.existsSync(filePath)) {
+    if (fs.existsSync(targetFolderPath)) {
+        throw new Error('Folder already exists')
+    }
+
+    fs.mkdirSync(targetFolderPath, { recursive: true })
+}
+
+function deleteLocalEntry(entryPath) {
+    const targetPath = resolveLocalFilePath(entryPath)
+
+    if (!fs.existsSync(targetPath)) {
         throw new Error('File not found')
     }
 
-    fs.unlinkSync(filePath)
+    fs.rmSync(targetPath, { force: true, recursive: true })
+}
+
+function cleanupEmptyDirectories(startDirectory) {
+    const dataDirectory = getDataDirectory()
+    let currentDirectory = startDirectory
+
+    while (currentDirectory.startsWith(dataDirectory) && currentDirectory !== dataDirectory) {
+        if (!fs.existsSync(currentDirectory)) {
+            currentDirectory = path.dirname(currentDirectory)
+            continue
+        }
+
+        const remainingEntries = fs
+            .readdirSync(currentDirectory)
+            .filter((entryName) => entryName !== '.git')
+
+        if (remainingEntries.length > 0) {
+            break
+        }
+
+        fs.rmdirSync(currentDirectory)
+        currentDirectory = path.dirname(currentDirectory)
+    }
 }
 
 function renameLocalFile(oldFileName, newFileName) {
@@ -234,7 +331,9 @@ function renameLocalFile(oldFileName, newFileName) {
         throw new Error('File already exists')
     }
 
+    fs.mkdirSync(path.dirname(newFilePath), { recursive: true })
     fs.renameSync(oldFilePath, newFilePath)
+    cleanupEmptyDirectories(path.dirname(oldFilePath))
 }
 
 function openLocalDataTerminal() {
@@ -311,7 +410,7 @@ function createWindow() {
 }
 
 ipcMain.handle('local-files:list', () => {
-    return listLocalFiles()
+    return listLocalEntries()
 })
 
 ipcMain.handle('local-files:exists', () => {
@@ -355,8 +454,15 @@ ipcMain.handle('local-files:create', (_event, fileName) => {
     return true
 })
 
+ipcMain.handle('local-files:create-folder', (_event, folderPath) => {
+    createLocalFolder(folderPath)
+    commitAllChanges('create-folder', folderPath)
+    return true
+})
+
 ipcMain.handle('local-files:delete', (_event, fileName) => {
-    deleteLocalFile(fileName)
+    deleteLocalEntry(fileName)
+    cleanupEmptyDirectories(path.dirname(resolveLocalFilePath(fileName)))
     commitAllChanges('remove', fileName)
     return true
 })

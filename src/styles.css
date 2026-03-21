@@ -120,7 +120,7 @@ body {
 
 .sidebar-toolbar-actions {
   display: grid;
-  grid-template-columns: repeat(6, 32px);
+  grid-template-columns: repeat(5, 32px);
   gap: 6px;
   margin-left: auto;
   justify-content: flex-end;
@@ -254,8 +254,12 @@ body {
 
 .file-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   align-content: start;
+  min-height: 0;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .file-row {
@@ -264,7 +268,9 @@ body {
   align-items: center;
   gap: 8px;
   border-radius: 10px;
-  background: var(--bg-surface);
+  background: rgba(255, 255, 255, 0.03);
+  padding-left: calc(var(--tree-depth, 0) * 26px);
+  transition: background-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
 }
 
 .file-row.is-active {
@@ -275,7 +281,7 @@ body {
 .file-button {
   border: 0;
   border-radius: 10px;
-  padding: 12px 14px;
+  padding: 8px 14px;
   text-align: left;
   font: inherit;
   color: inherit;
@@ -287,10 +293,108 @@ body {
   white-space: nowrap;
 }
 
+.file-button:hover {
+  color: #ffffff;
+}
+
+.tree-group,
+.tree-children {
+  display: grid;
+  gap: 8px;
+}
+
+.folder-row {
+  border: 0;
+  border-radius: 12px;
+  padding: 8px 14px;
+  padding-left: calc(14px + var(--tree-depth, 0) * 26px);
+  display: grid;
+  grid-template-columns: 14px 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  font: inherit;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.folder-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.folder-row.contains-active {
+  background: rgba(215, 33, 113, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(215, 33, 113, 0.18);
+}
+
+.folder-row.is-editing {
+  cursor: default;
+}
+
+.folder-row.is-drop-target,
+.sidebar-root-dropzone.is-drop-target {
+  background: rgba(0, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(0, 255, 255, 0.28);
+}
+
+.folder-chevron {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.folder-icon {
+  color: #ffd36e;
+}
+
+.folder-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-meta {
+  min-width: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.sidebar-root-dropzone {
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  padding: 8px 14px;
+  display: grid;
+  grid-template-columns: 16px auto 1fr;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  font: inherit;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  cursor: default;
+  transition: background-color 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.sidebar-root-icon {
+  color: #7cd2ff;
+}
+
+.sidebar-root-hint {
+  justify-self: end;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+}
+
 .file-rename-input {
   border: 0;
   border-radius: 10px;
-  padding: 12px 14px;
+  padding: 8px 14px;
   font: inherit;
   color: var(--text-main);
   background: var(--bg-surface);
@@ -298,42 +402,17 @@ body {
   outline: none;
 }
 
+.folder-rename-input {
+  width: 100%;
+}
+
 .file-row.is-active .file-rename-input {
   color: #ffffff;
   background: var(--bg-active-soft);
 }
 
-.file-row.is-active .file-button,
-.file-row.is-active .file-delete-button,
-.file-row.is-active .file-lock-button {
+.file-row.is-active .file-button {
   color: #f7f3ea;
-}
-
-.file-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding-right: 8px;
-}
-
-.file-lock-button,
-.file-delete-button {
-  border: 0;
-  background: transparent;
-  color: var(--text-dim);
-  display: grid;
-  place-items: center;
-  font: inherit;
-  width: 36px;
-  height: 36px;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.file-lock-button:disabled,
-.file-delete-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.35;
 }
 
 .content-panel {

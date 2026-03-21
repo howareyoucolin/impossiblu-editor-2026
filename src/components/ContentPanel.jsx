@@ -131,6 +131,7 @@ export function ContentPanel({
 }) {
     const lineNumbersRef = useRef(null)
     const editorRef = useRef(null)
+    const readonlyContentRef = useRef(null)
     const contextMenuRef = useRef(null)
     const readonlyMatchRefs = useRef({})
     const isLocked = activeState?.isLocked ?? true
@@ -327,6 +328,9 @@ export function ContentPanel({
 
     function handleTabDrop(fileName, event) {
         event.preventDefault()
+        if (draggedTab) {
+            onActivateTab(draggedTab)
+        }
         setDraggedTab('')
         setDropTargetTab('')
         setDropTargetPlacement('before')
@@ -365,6 +369,28 @@ export function ContentPanel({
         }
 
         setContextMenu(null)
+    }
+
+    function handleReadonlyKeyDown(event) {
+        if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'a') {
+            return
+        }
+
+        if (!readonlyContentRef.current) {
+            return
+        }
+
+        event.preventDefault()
+        const selection = window.getSelection()
+
+        if (!selection) {
+            return
+        }
+
+        const range = document.createRange()
+        range.selectNodeContents(readonlyContentRef.current)
+        selection.removeAllRanges()
+        selection.addRange(range)
     }
 
     function focusMatch(matchIndex) {
@@ -658,12 +684,15 @@ export function ContentPanel({
                         <>
                             <div
                                 className="content-readonly"
+                                onKeyDown={handleReadonlyKeyDown}
                                 onScroll={(event) => {
                                     if (lineNumbersRef.current) {
                                         lineNumbersRef.current.scrollTop =
                                             event.target.scrollTop
                                     }
                                 }}
+                                ref={readonlyContentRef}
+                                tabIndex={0}
                             >
                                 {readonlySegments.map((segment, index) =>
                                     renderReadonlySegment(segment, index)

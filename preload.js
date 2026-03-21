@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('localFiles', {
     write: (fileName, content) =>
         ipcRenderer.invoke('local-files:write', fileName, content),
     create: (fileName) => ipcRenderer.invoke('local-files:create', fileName),
+    createFolder: (folderPath) =>
+        ipcRenderer.invoke('local-files:create-folder', folderPath),
     delete: (fileName) => ipcRenderer.invoke('local-files:delete', fileName),
     rename: (oldFileName, newFileName) =>
         ipcRenderer.invoke('local-files:rename', oldFileName, newFileName),
