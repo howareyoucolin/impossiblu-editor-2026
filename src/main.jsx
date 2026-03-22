@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import icon from './assets/icon.png'
 import { ContentPanel } from './components/ContentPanel'
@@ -298,7 +298,6 @@ function App() {
     const [isShowingHiddenFiles, setIsShowingHiddenFiles] = useState(false)
     const [contentSearchJump, setContentSearchJump] = useState(null)
     const [isHistoryOpen, setIsHistoryOpen] = useState(false)
-    const [isUsageLookupOpen, setIsUsageLookupOpen] = useState(false)
     const [historyMessages, setHistoryMessages] = useState([])
     const [historyError, setHistoryError] = useState('')
     const [historyActionError, setHistoryActionError] = useState('')
@@ -306,6 +305,7 @@ function App() {
     const [historyTotal, setHistoryTotal] = useState(0)
     const [isCopyPreviewOpen, setIsCopyPreviewOpen] = useState(false)
     const [isAboutOpen, setIsAboutOpen] = useState(false)
+    const sidebarSearchRequestIdRef = useRef(0)
     const files = useMemo(
         () =>
             entries
@@ -544,32 +544,37 @@ function App() {
         if (!isSidebarSearchOpen) {
             setSidebarSearchResults([])
             setIsSidebarSearchLoading(false)
+            sidebarSearchRequestIdRef.current += 1
             return undefined
         }
 
         if (sidebarSearchQuery.trim() === '') {
             setSidebarSearchResults([])
             setIsSidebarSearchLoading(false)
+            sidebarSearchRequestIdRef.current += 1
             return undefined
         }
 
         let cancelled = false
+        const requestId = sidebarSearchRequestIdRef.current + 1
+        sidebarSearchRequestIdRef.current = requestId
 
         async function loadSidebarSearchResults() {
+            setSidebarSearchResults([])
             setIsSidebarSearchLoading(true)
 
             try {
                 const nextResults = await searchAcrossFiles(sidebarSearchQuery)
 
-                if (!cancelled) {
+                if (!cancelled && sidebarSearchRequestIdRef.current === requestId) {
                     setSidebarSearchResults(nextResults)
                 }
             } catch (error) {
-                if (!cancelled) {
+                if (!cancelled && sidebarSearchRequestIdRef.current === requestId) {
                     setSidebarSearchResults([])
                 }
             } finally {
-                if (!cancelled) {
+                if (!cancelled && sidebarSearchRequestIdRef.current === requestId) {
                     setIsSidebarSearchLoading(false)
                 }
             }
@@ -581,6 +586,12 @@ function App() {
             cancelled = true
         }
     }, [isSidebarSearchOpen, sidebarSearchQuery])
+
+    function handleChangeSidebarSearch(nextQuery) {
+        setSidebarSearchQuery(nextQuery)
+        setSidebarSearchResults([])
+        setIsSidebarSearchLoading(nextQuery.trim() !== '')
+    }
 
     async function handleSaveTab(fileName) {
         const nextState = editorStates[fileName] || getDefaultEditorState()
@@ -982,13 +993,11 @@ function App() {
                 isAboutOpen={isAboutOpen}
                 isHistoryOpen={isHistoryOpen}
                 isShowingHiddenFiles={isShowingHiddenFiles}
-                isUsageLookupOpen={isUsageLookupOpen}
                 isSidebarSearchOpen={isSidebarSearchOpen}
                 isSidebarSearchLoading={isSidebarSearchLoading}
-                onChangeSidebarSearch={setSidebarSearchQuery}
+                onChangeSidebarSearch={handleChangeSidebarSearch}
                 onOpenAbout={() => setIsAboutOpen(true)}
                 onOpenHistory={openHistoryModal}
-                onOpenUsageLookup={() => setIsUsageLookupOpen(true)}
                 onCopyOpenFiles={async () => {
                     await navigator.clipboard.writeText(combinedOpenTabsContent)
                     setIsCopyPreviewOpen(true)
@@ -1060,7 +1069,7 @@ function App() {
                                 A small experimental file-browser app built to explore
                                 what Codex can do in a real workflow.
                             </p>
-                            <p className="about-modal-version">Version 1.0.0</p>
+                            <p className="about-modal-version">Version 2.0.0</p>
                         </div>
                     </div>
                 </div>
@@ -1104,53 +1113,6 @@ function App() {
                             >
                                 OK
                             </button>
-                        </div>
-                    </div>
-                </div>
-            ) : null}
-            {isUsageLookupOpen ? (
-                <div className="history-modal-backdrop" role="presentation">
-                    <div
-                        aria-labelledby="usage-lookup-title"
-                        aria-modal="true"
-                        className="history-modal usage-modal"
-                        role="dialog"
-                    >
-                        <div className="history-modal-header">
-                            <h2 id="usage-lookup-title">Custom Tag Usage</h2>
-                            <div className="history-modal-header-actions">
-                                <button
-                                    aria-label="Close tag usage"
-                                    className="history-modal-close"
-                                    onClick={() => setIsUsageLookupOpen(false)}
-                                    type="button"
-                                >
-                                    x
-                                </button>
-                            </div>
-                        </div>
-                        <div className="usage-modal-list">
-                            <div className="usage-modal-item">
-                                <div className="usage-modal-tag">[copy=secret-text]</div>
-                                <p className="usage-modal-description">
-                                    Highlights `secret-text` in readonly mode. Click it
-                                    to copy the value.
-                                </p>
-                            </div>
-                            <div className="usage-modal-item">
-                                <div className="usage-modal-tag">[pass=my-password]</div>
-                                <p className="usage-modal-description">
-                                    Shows masked text like `***********` in readonly mode.
-                                    Click it to copy the real password.
-                                </p>
-                            </div>
-                            <div className="usage-modal-item">
-                                <div className="usage-modal-tag">[link=openai.com]</div>
-                                <p className="usage-modal-description">
-                                    Underlines `openai.com` in readonly mode. Click it
-                                    to open a new tab in Chrome.
-                                </p>
-                            </div>
                         </div>
                     </div>
                 </div>

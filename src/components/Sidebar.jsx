@@ -74,12 +74,10 @@ export function Sidebar({
     entries,
     isHistoryOpen,
     isShowingHiddenFiles,
-    isUsageLookupOpen,
     isSidebarSearchOpen,
     isSidebarSearchLoading,
     onChangeSidebarSearch,
     onOpenHistory,
-    onOpenUsageLookup,
     onOpenAbout,
     onCopyOpenFiles,
     onCreateFile,
@@ -107,6 +105,27 @@ export function Sidebar({
     const [dropTargetPath, setDropTargetPath] = useState('')
     const [contextMenu, setContextMenu] = useState(null)
     const tree = useMemo(() => buildSidebarTree(entries), [entries])
+    const groupedSearchResults = useMemo(() => {
+        const groups = []
+        const groupMap = new Map()
+
+        searchResults.forEach((result) => {
+            let existingGroup = groupMap.get(result.fileName)
+
+            if (!existingGroup) {
+                existingGroup = {
+                    fileName: result.fileName,
+                    matches: [],
+                }
+                groupMap.set(result.fileName, existingGroup)
+                groups.push(existingGroup)
+            }
+
+            existingGroup.matches.push(result)
+        })
+
+        return groups
+    }, [searchResults])
 
     useEffect(() => {
         setExpandedFolders((currentFolders) => {
@@ -430,20 +449,6 @@ export function Sidebar({
                     </button>
                     <button
                         className={
-                            isUsageLookupOpen
-                                ? 'sidebar-add-button is-active'
-                                : 'sidebar-add-button'
-                        }
-                        aria-label="Show custom tag usage"
-                        onClick={onOpenUsageLookup}
-                        onMouseEnter={() => setHoveredToolbarButton('Tag Usage')}
-                        onMouseLeave={() => setHoveredToolbarButton('')}
-                        type="button"
-                    >
-                        <i className="fa-solid fa-circle-question" aria-hidden="true" />
-                    </button>
-                    <button
-                        className={
                             isHistoryOpen
                                 ? 'sidebar-add-button is-active'
                                 : 'sidebar-add-button'
@@ -543,23 +548,32 @@ export function Sidebar({
                         searchResults.length === 0 ? (
                             <p className="sidebar-search-empty">No matches found.</p>
                         ) : null}
-                        {searchResults.map((result) => (
-                            <button
-                                key={`${result.fileName}:${result.lineNumber}:${result.lineText}`}
-                                className="sidebar-search-result"
-                                onClick={() => onSelectSearchResult(result)}
-                                type="button"
+                        {groupedSearchResults.map((group) => (
+                            <div
+                                key={group.fileName}
+                                className="sidebar-search-result-group"
                             >
-                                <span className="sidebar-search-result-file">
-                                    {result.fileName}
-                                </span>
-                                <span className="sidebar-search-result-line">
-                                    Line {result.lineNumber}
-                                </span>
-                                <span className="sidebar-search-result-text">
-                                    {result.lineText.trim() || '(empty line)'}
-                                </span>
-                            </button>
+                                <div className="sidebar-search-result-file">
+                                    {group.fileName}
+                                </div>
+                                <div className="sidebar-search-result-matches">
+                                    {group.matches.map((result) => (
+                                        <button
+                                            key={`${result.fileName}:${result.lineNumber}:${result.matchStart}:${result.matchEnd}`}
+                                            className="sidebar-search-result-match"
+                                            onClick={() => onSelectSearchResult(result)}
+                                            type="button"
+                                        >
+                                            <span className="sidebar-search-result-line">
+                                                Line {result.lineNumber}
+                                            </span>
+                                            <span className="sidebar-search-result-text">
+                                                {result.lineText.trim() || '(empty line)'}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         ))}
                     </div>
                 </div>

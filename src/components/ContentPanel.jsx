@@ -182,6 +182,72 @@ function decorateSpecialTokens(html, options = {}) {
     return container.innerHTML
 }
 
+function highlightReadonlyMatches(html, matches, activeMatchIndex) {
+    if (typeof document === 'undefined' || matches.length === 0) {
+        return html
+    }
+
+    const container = document.createElement('div')
+    container.innerHTML = html
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+    const textNodes = []
+    let currentOffset = 0
+
+    while (walker.nextNode()) {
+        const textNode = walker.currentNode
+        const textContent = textNode.textContent || ''
+
+        if (!textContent) {
+            continue
+        }
+
+        textNodes.push({
+            end: currentOffset + textContent.length,
+            node: textNode,
+            start: currentOffset,
+        })
+        currentOffset += textContent.length
+    }
+
+    textNodes.forEach(({ node, start, end }) => {
+        const overlappingMatches = matches.filter((match) => match.start < end && match.end > start)
+
+        if (overlappingMatches.length === 0) {
+            return
+        }
+
+        const fragment = document.createDocumentFragment()
+        const textContent = node.textContent || ''
+        let cursor = 0
+
+        overlappingMatches.forEach((match) => {
+            const localStart = Math.max(match.start - start, 0)
+            const localEnd = Math.min(match.end - start, textContent.length)
+
+            if (localStart > cursor) {
+                fragment.append(textContent.slice(cursor, localStart))
+            }
+
+            const matchElement = document.createElement('span')
+            matchElement.className =
+                match.index === activeMatchIndex
+                    ? 'readonly-search-match is-active'
+                    : 'readonly-search-match'
+            matchElement.textContent = textContent.slice(localStart, localEnd)
+            fragment.append(matchElement)
+            cursor = localEnd
+        })
+
+        if (cursor < textContent.length) {
+            fragment.append(textContent.slice(cursor))
+        }
+
+        node.replaceWith(fragment)
+    })
+
+    return container.innerHTML
+}
+
 function serializeDecoratedHtml(html) {
     if (typeof document === 'undefined') {
         return html
@@ -363,7 +429,14 @@ export function ContentPanel({
         }
 
         return nextMatches
-    }, [searchTerm, searchableContent])
+    }, [searchTerm, searchableContent]).map((match, index) => ({
+        ...match,
+        index,
+    }))
+    const readonlySearchHtml = useMemo(
+        () => highlightReadonlyMatches(readonlyDecoratedHtmlContent, matches, activeMatchIndex),
+        [activeMatchIndex, matches, readonlyDecoratedHtmlContent]
+    )
 
     useEffect(() => {
         setSearchTerm('')
@@ -576,6 +649,14 @@ export function ContentPanel({
             setActiveMatchIndex(0)
         }
     }, [activeMatchIndex, matches])
+
+    useEffect(() => {
+        if (!isSearchOpen || matches.length === 0) {
+            return
+        }
+
+        focusMatch(activeMatchIndex)
+    }, [activeMatchIndex, isSearchOpen, matches, readonlySearchHtml])
 
     useEffect(() => {
         if (
@@ -1118,7 +1199,19 @@ export function ContentPanel({
             return
         }
 
-        if (isLocked || editorMode !== 'source') {
+        if (isLocked) {
+            const matchElements =
+                readonlyContentRef.current?.querySelectorAll('.readonly-search-match')
+            const activeMatchElement = matchElements?.[matchIndex]
+
+            activeMatchElement?.scrollIntoView({
+                block: 'center',
+                behavior: 'smooth',
+            })
+            return
+        }
+
+        if (editorMode !== 'source') {
             return
         }
     }
@@ -1504,7 +1597,7 @@ export function ContentPanel({
                     {isLocked ? (
                         <div
                             className="content-readonly html-content-surface"
-                            dangerouslySetInnerHTML={{ __html: readonlyDecoratedHtmlContent }}
+                            dangerouslySetInnerHTML={{ __html: readonlySearchHtml }}
                             onClick={handleSpecialTokenClick}
                             onKeyDown={handleReadonlyKeyDown}
                             ref={readonlyContentRef}

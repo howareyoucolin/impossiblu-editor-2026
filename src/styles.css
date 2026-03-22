@@ -122,7 +122,7 @@ body {
 
 .sidebar-toolbar-actions {
   display: grid;
-  grid-template-columns: repeat(6, 32px);
+  grid-template-columns: repeat(5, 32px);
   gap: 6px;
   margin-left: auto;
   justify-content: flex-end;
@@ -201,25 +201,38 @@ body {
   line-height: 1.4;
 }
 
-.sidebar-search-result {
-  border: 0;
+.sidebar-search-result-group {
   padding: 10px 12px;
   display: grid;
-  gap: 4px;
-  text-align: left;
-  font: inherit;
+  gap: 8px;
   background: var(--bg-surface);
-  color: var(--text-main);
-  cursor: pointer;
-}
-
-.sidebar-search-result:hover {
-  background: var(--bg-surface-soft);
 }
 
 .sidebar-search-result-file {
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+.sidebar-search-result-matches {
+  display: grid;
+  gap: 6px;
+}
+
+.sidebar-search-result-match {
+  border: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  font: inherit;
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.sidebar-search-result-match:hover .sidebar-search-result-text,
+.sidebar-search-result-match:hover .sidebar-search-result-line {
+  color: #ffffff;
 }
 
 .sidebar-search-result-line {
@@ -1399,10 +1412,6 @@ body {
   justify-content: center;
 }
 
-.usage-modal {
-  width: min(640px, calc(100vw - 48px));
-}
-
 .about-modal {
   width: min(420px, calc(100vw - 48px));
 }
@@ -1437,27 +1446,4 @@ body {
   color: #ffd66d;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 0.88rem;
-}
-
-.usage-modal-list {
-  display: grid;
-  gap: 12px;
-}
-
-.usage-modal-item {
-  padding: 14px 16px;
-  background: #231023;
-}
-
-.usage-modal-tag {
-  color: #ffd66d;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 0.95rem;
-}
-
-.usage-modal-description {
-  margin: 8px 0 0;
-  color: var(--text-main);
-  line-height: 1.45;
-  font-size: 0.92rem;
 }
