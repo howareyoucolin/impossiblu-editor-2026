@@ -54,8 +54,14 @@ function convertPlainTextToHtml(text) {
     )
 }
 
-function createSpecialTokenNode(type, value) {
-    const displayValue = type === 'pass' ? '•'.repeat(value.length) : value
+function createSpecialTokenNode(
+    type,
+    value,
+    { isPasswordVisible = false, mode = 'visual', tokenKey = '' } = {}
+) {
+    const displayValue = type === 'pass' && mode === 'readonly' && !isPasswordVisible
+        ? '••••••••'
+        : value
 
     if (type === 'link') {
         const linkElement = document.createElement('a')
@@ -75,19 +81,51 @@ function createSpecialTokenNode(type, value) {
     tokenElement.dataset.tokenType = type
     tokenElement.dataset.tokenValue = value
     tokenElement.contentEditable = 'false'
+
+    if (type === 'pass' && mode === 'readonly') {
+        tokenElement.classList.add('readonly-pass-token')
+        tokenElement.dataset.tokenKey = tokenKey
+
+        const valueElement = document.createElement('span')
+        valueElement.className = 'readonly-pass-value'
+        valueElement.textContent = displayValue
+        tokenElement.append(valueElement)
+
+        const toggleButton = document.createElement('button')
+        toggleButton.type = 'button'
+        toggleButton.className = 'readonly-pass-toggle'
+        toggleButton.dataset.tokenKey = tokenKey
+        toggleButton.setAttribute(
+            'aria-label',
+            isPasswordVisible ? 'Hide password' : 'Show password'
+        )
+
+        const iconElement = document.createElement('i')
+        iconElement.className = isPasswordVisible
+            ? 'fa-solid fa-eye-slash'
+            : 'fa-solid fa-eye'
+        iconElement.setAttribute('aria-hidden', 'true')
+        toggleButton.append(iconElement)
+        tokenElement.append(toggleButton)
+        return tokenElement
+    }
+
     tokenElement.textContent = displayValue
     return tokenElement
 }
 
-function decorateSpecialTokens(html) {
+function decorateSpecialTokens(html, options = {}) {
     if (typeof document === 'undefined') {
         return html
     }
+
+    const { mode = 'visual', revealedPasswordKeys = new Set() } = options
 
     const container = document.createElement('div')
     container.innerHTML = html
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
     const textNodes = []
+    let tokenIndex = 0
 
     while (walker.nextNode()) {
         const currentNode = walker.currentNode
@@ -113,13 +151,21 @@ function decorateSpecialTokens(html) {
         while ((match = SPECIAL_TAG_PATTERN.exec(sourceText)) !== null) {
             const [rawText, type, value] = match
             const matchStart = match.index
+            const tokenKey = `${type}:${value}:${tokenIndex}`
 
             if (matchStart > lastIndex) {
                 fragment.append(sourceText.slice(lastIndex, matchStart))
             }
 
-            fragment.append(createSpecialTokenNode(type, value))
+            fragment.append(
+                createSpecialTokenNode(type, value, {
+                    isPasswordVisible: revealedPasswordKeys.has(tokenKey),
+                    mode,
+                    tokenKey,
+                })
+            )
             lastIndex = matchStart + rawText.length
+            tokenIndex += 1
         }
 
         if (lastIndex === 0) {
@@ -255,6 +301,7 @@ export function ContentPanel({
     const [isSearchOpen, setIsSearchOpen] = useState(false)
     const [activeMatchIndex, setActiveMatchIndex] = useState(0)
     const [copyBubble, setCopyBubble] = useState(null)
+    const [revealedPasswordKeys, setRevealedPasswordKeys] = useState(() => new Set())
     const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false)
     const [draggedTab, setDraggedTab] = useState('')
     const [dropTargetTab, setDropTargetTab] = useState('')
@@ -277,9 +324,17 @@ export function ContentPanel({
     })
     const appliedJumpIdRef = useRef(null)
     const normalizedHtmlContent = useMemo(() => normalizeEditorHtml(content), [content])
-    const decoratedHtmlContent = useMemo(
-        () => decorateSpecialTokens(normalizedHtmlContent),
+    const visualDecoratedHtmlContent = useMemo(
+        () => decorateSpecialTokens(normalizedHtmlContent, { mode: 'visual' }),
         [normalizedHtmlContent]
+    )
+    const readonlyDecoratedHtmlContent = useMemo(
+        () =>
+            decorateSpecialTokens(normalizedHtmlContent, {
+                mode: 'readonly',
+                revealedPasswordKeys,
+            }),
+        [normalizedHtmlContent, revealedPasswordKeys]
     )
     const searchableContent = useMemo(() => getPlainTextFromHtml(content), [content])
 
@@ -315,6 +370,7 @@ export function ContentPanel({
         setIsSearchOpen(false)
         setActiveMatchIndex(0)
         setCopyBubble(null)
+        setRevealedPasswordKeys(new Set())
         setIsDiscardConfirmOpen(false)
         setEditorMode('visual')
         hoveredBlockRef.current = null
@@ -347,12 +403,12 @@ export function ContentPanel({
         if (!isLocked && editorMode === 'visual' && editSurfaceRef.current) {
             if (
                 document.activeElement !== editSurfaceRef.current &&
-                editSurfaceRef.current.innerHTML !== decoratedHtmlContent
+                editSurfaceRef.current.innerHTML !== visualDecoratedHtmlContent
             ) {
-                editSurfaceRef.current.innerHTML = decoratedHtmlContent
+                editSurfaceRef.current.innerHTML = visualDecoratedHtmlContent
             }
         }
-    }, [decoratedHtmlContent, editorMode, isLocked])
+    }, [editorMode, isLocked, visualDecoratedHtmlContent])
 
     useEffect(() => {
         if (!activeFile) {
@@ -679,6 +735,30 @@ export function ContentPanel({
 
         event.preventDefault()
         event.stopPropagation()
+
+        if (tokenType === 'pass') {
+            const toggleButton = event.target.closest('.readonly-pass-toggle')
+
+            if (toggleButton) {
+                const tokenKey = toggleButton.getAttribute('data-token-key') || ''
+
+                if (tokenKey) {
+                    setRevealedPasswordKeys((currentKeys) => {
+                        const nextKeys = new Set(currentKeys)
+
+                        if (nextKeys.has(tokenKey)) {
+                            nextKeys.delete(tokenKey)
+                        } else {
+                            nextKeys.add(tokenKey)
+                        }
+
+                        return nextKeys
+                    })
+                }
+
+                return
+            }
+        }
 
         if (tokenType === 'link') {
             await window.localFiles.openLink(tokenValue)
@@ -1424,7 +1504,7 @@ export function ContentPanel({
                     {isLocked ? (
                         <div
                             className="content-readonly html-content-surface"
-                            dangerouslySetInnerHTML={{ __html: decoratedHtmlContent }}
+                            dangerouslySetInnerHTML={{ __html: readonlyDecoratedHtmlContent }}
                             onClick={handleSpecialTokenClick}
                             onKeyDown={handleReadonlyKeyDown}
                             ref={readonlyContentRef}

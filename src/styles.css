@@ -1048,9 +1048,32 @@ body {
   box-sizing: border-box;
 }
 
-.special-token-copy,
-.special-token-pass {
+.special-token-copy {
   color: #ffd66d;
+}
+
+.special-token-pass {
+  color: #ff9db5;
+}
+
+.readonly-pass-token {
+  gap: 0.38rem;
+}
+
+.readonly-pass-toggle {
+  border: 0;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.52);
+  cursor: pointer;
+  font-size: 0.82em;
+  line-height: 1;
+}
+
+.readonly-pass-toggle:hover {
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .special-token-link {
