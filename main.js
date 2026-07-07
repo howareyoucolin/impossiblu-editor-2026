@@ -1,10 +1,13 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron')
+const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen } = require('electron')
 const { execFile, execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
 const packagedDataFolderName = 'ImpossibluEditor'
 const iconPath = path.join(__dirname, 'src', 'assets', 'icon.png')
+let mainWindow = null
+let menuBarTray = null
+let isQuitting = false
 
 function getDataDirectory() {
     if (app.isPackaged) {
@@ -401,16 +404,100 @@ function openLinkInChrome(value) {
     throw new Error('Opening links in Chrome is only supported on macOS right now')
 }
 
+function createTrayIcon() {
+    const trayIcon = nativeImage.createFromPath(iconPath)
+
+    if (trayIcon.isEmpty()) {
+        return iconPath
+    }
+
+    const resizedIcon = trayIcon.resize({ width: 18, height: 18 })
+
+    if (process.platform === 'darwin') {
+        resizedIcon.setTemplateImage(false)
+    }
+
+    return resizedIcon
+}
+
+function showMainWindow() {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        createWindow()
+        return
+    }
+
+    if (mainWindow.isMinimized()) {
+        mainWindow.restore()
+    }
+
+    mainWindow.show()
+    mainWindow.focus()
+}
+
+function hideMainWindow() {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        return
+    }
+
+    mainWindow.hide()
+}
+
+function toggleMainWindow() {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        createWindow()
+        return
+    }
+
+    if (mainWindow.isVisible()) {
+        hideMainWindow()
+        return
+    }
+
+    showMainWindow()
+}
+
+function createMenuBarTray() {
+    if (menuBarTray || process.platform !== 'darwin') {
+        return
+    }
+
+    menuBarTray = new Tray(createTrayIcon())
+    menuBarTray.setToolTip('ImpossibluEditor')
+    menuBarTray.setIgnoreDoubleClickEvents(true)
+    menuBarTray.on('click', toggleMainWindow)
+    menuBarTray.setContextMenu(
+        Menu.buildFromTemplate([
+            {
+                label: 'Open ImpossibluEditor',
+                click: showMainWindow,
+            },
+            {
+                type: 'separator',
+            },
+            {
+                label: 'Quit',
+                click: () => {
+                    isQuitting = true
+                    app.quit()
+                },
+            },
+        ])
+    )
+}
+
 function createWindow() {
     const { workAreaSize } = screen.getPrimaryDisplay()
     const width = 1500
     const height = Math.round(workAreaSize.height * 0.9)
 
-    const win = new BrowserWindow({
+    mainWindow = new BrowserWindow({
         width,
         height,
         resizable: false,
         icon: iconPath,
+        autoHideMenuBar: true,
+        show: false,
+        skipTaskbar: process.platform === 'darwin',
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -418,16 +505,32 @@ function createWindow() {
         },
     })
 
+    mainWindow.on('close', (event) => {
+        if (process.platform === 'darwin' && !isQuitting) {
+            event.preventDefault()
+            hideMainWindow()
+        }
+    })
+
+    mainWindow.on('closed', () => {
+        mainWindow = null
+    })
+
+    mainWindow.once('ready-to-show', () => {
+        showMainWindow()
+    })
+
     const devServerUrl = process.env.ELECTRON_RENDERER_URL
     const reactBuildPath = path.join(__dirname, 'react-dist', 'react.html')
     const fallbackPath = path.join(__dirname, 'index.html')
 
     if (devServerUrl) {
-        win.loadURL(devServerUrl)
-        return
+        mainWindow.loadURL(devServerUrl)
+        return mainWindow
     }
 
-    win.loadFile(fs.existsSync(reactBuildPath) ? reactBuildPath : fallbackPath)
+    mainWindow.loadFile(fs.existsSync(reactBuildPath) ? reactBuildPath : fallbackPath)
+    return mainWindow
 }
 
 ipcMain.handle('local-files:list', () => {
@@ -496,17 +599,26 @@ ipcMain.handle('local-files:rename', (_event, oldFileName, newFileName) => {
     return true
 })
 
+app.on('before-quit', () => {
+    isQuitting = true
+})
+
 app.whenReady().then(() => {
     if (process.platform === 'darwin' && app.dock && fs.existsSync(iconPath)) {
         app.dock.setIcon(iconPath)
+        app.dock.hide()
     }
 
+    createMenuBarTray()
     createWindow()
 
     app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
+        if (!mainWindow || mainWindow.isDestroyed()) {
             createWindow()
+            return
         }
+
+        showMainWindow()
     })
 })
 
