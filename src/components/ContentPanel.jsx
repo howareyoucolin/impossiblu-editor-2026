@@ -8,6 +8,39 @@ import { tags } from '@lezer/highlight'
 
 const SPECIAL_TAG_PATTERN = /\[(copy|pass|link)=([^\]]*)\]/g
 const SPACE_BLOCK_TAG = 'SPACE-BLOCK'
+const HEADING_TAGS = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6']
+const INLINE_FORMATTING_TAGS = ['STRONG', 'EM', 'B', 'I', 'U', 'CODE']
+const SKIPPED_HTML_TAGS = ['HEAD', 'LINK', 'META', 'SCRIPT', 'STYLE', 'TITLE']
+const BLOCK_WRAPPER_TAGS = [
+    'ARTICLE',
+    'ASIDE',
+    'BLOCKQUOTE',
+    'DIV',
+    'FIGCAPTION',
+    'FIGURE',
+    'FOOTER',
+    'HEADER',
+    'MAIN',
+    'NAV',
+    'SECTION',
+]
+const BLOCK_LIKE_TAGS = [
+    ...BLOCK_WRAPPER_TAGS,
+    ...HEADING_TAGS,
+    'BR',
+    'LI',
+    'OL',
+    'P',
+    'PRE',
+    'TABLE',
+    'TBODY',
+    'TD',
+    'TH',
+    'THEAD',
+    'TR',
+    'UL',
+    SPACE_BLOCK_TAG,
+]
 const htmlSourceHighlightStyle = HighlightStyle.define([
     {
         tag: [tags.angleBracket, tags.tagName, tags.attributeName, tags.attributeValue],
@@ -43,6 +76,10 @@ function escapeHtml(text) {
         .replaceAll('>', '&gt;')
 }
 
+function escapeHtmlAttribute(text) {
+    return escapeHtml(text).replaceAll('"', '&quot;')
+}
+
 function convertPlainTextToHtml(text) {
     const normalizedText = text.replace(/\r\n?/g, '\n')
     const lines = normalizedText.split('\n')
@@ -52,6 +89,205 @@ function convertPlainTextToHtml(text) {
             .map((line) => (line ? `<p>${escapeHtml(line)}</p>` : '<p><br /></p>'))
             .join('') || '<p><br /></p>'
     )
+}
+
+function normalizeTextContent(text) {
+    return text.replace(/\u00a0/g, ' ')
+}
+
+function normalizeInlineChildren(node, options = {}) {
+    return Array.from(node.childNodes)
+        .map((childNode) => normalizeInlineNode(childNode, options))
+        .join('')
+}
+
+function normalizeInlineNode(node, options = {}) {
+    const { preserveLineBreaks = true } = options
+
+    if (node.nodeType === Node.TEXT_NODE) {
+        return escapeHtml(normalizeTextContent(node.textContent || ''))
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+        return ''
+    }
+
+    const tagName = node.nodeName.toUpperCase()
+
+    if (SKIPPED_HTML_TAGS.includes(tagName)) {
+        return ''
+    }
+
+    if (tagName === SPACE_BLOCK_TAG) {
+        return ''
+    }
+
+    if (tagName === 'BR') {
+        return preserveLineBreaks ? '<br />' : ' '
+    }
+
+    if (INLINE_FORMATTING_TAGS.includes(tagName)) {
+        const innerContent = normalizeInlineChildren(node, { preserveLineBreaks })
+
+        if (!innerContent) {
+            return ''
+        }
+
+        return `<${tagName.toLowerCase()}>${innerContent}</${tagName.toLowerCase()}>`
+    }
+
+    if (tagName === 'A') {
+        const href = (node.getAttribute('href') || '').trim()
+        const innerContent =
+            normalizeInlineChildren(node, { preserveLineBreaks }) ||
+            escapeHtml(normalizeTextContent(href || node.textContent || ''))
+
+        if (!href) {
+            return innerContent
+        }
+
+        return `<a href="${escapeHtmlAttribute(href)}">${innerContent}</a>`
+    }
+
+    if (tagName === 'IMG') {
+        return escapeHtml(normalizeTextContent(node.getAttribute('alt') || ''))
+    }
+
+    return normalizeInlineChildren(node, { preserveLineBreaks })
+}
+
+function hasBlockLikeChildren(node) {
+    return Array.from(node.childNodes).some((childNode) => {
+        return (
+            childNode.nodeType === Node.ELEMENT_NODE &&
+            BLOCK_LIKE_TAGS.includes(childNode.nodeName.toUpperCase())
+        )
+    })
+}
+
+function normalizeListElement(node, { ordered = false, depth = 0 } = {}) {
+    return Array.from(node.children).flatMap((childNode, index) => {
+        if (childNode.nodeName.toUpperCase() !== 'LI') {
+            return normalizeNodeToBlocks(childNode, { listDepth: depth })
+        }
+
+        const nestedBlocks = []
+        const inlineContainer = document.createElement('div')
+
+        Array.from(childNode.childNodes).forEach((grandchildNode) => {
+            if (
+                grandchildNode.nodeType === Node.ELEMENT_NODE &&
+                ['UL', 'OL'].includes(grandchildNode.nodeName.toUpperCase())
+            ) {
+                nestedBlocks.push(
+                    ...normalizeListElement(grandchildNode, {
+                        depth: depth + 1,
+                        ordered: grandchildNode.nodeName.toUpperCase() === 'OL',
+                    })
+                )
+                return
+            }
+
+            inlineContainer.append(grandchildNode.cloneNode(true))
+        })
+
+        const prefix = ordered ? `${index + 1}. ` : '\u2022 '
+        const indent = '&nbsp;'.repeat(depth * 4)
+        const inlineContent = normalizeInlineChildren(inlineContainer, {
+            preserveLineBreaks: true,
+        }).trim()
+        const currentBlock = `<p>${indent}${escapeHtml(prefix)}${inlineContent || '<br />'}</p>`
+
+        return [currentBlock, ...nestedBlocks]
+    })
+}
+
+function normalizeTableElement(node) {
+    const rows = Array.from(node.querySelectorAll('tr')).map((rowNode) => {
+        const cells = Array.from(rowNode.children)
+            .filter((cellNode) => ['TH', 'TD'].includes(cellNode.nodeName.toUpperCase()))
+            .map((cellNode) =>
+                normalizeInlineChildren(cellNode, { preserveLineBreaks: false }).trim()
+            )
+            .filter(Boolean)
+
+        if (cells.length === 0) {
+            return ''
+        }
+
+        return `<p>${cells.join(' | ')}</p>`
+    })
+
+    return rows.filter(Boolean)
+}
+
+function normalizeNodeToBlocks(node, options = {}) {
+    const { listDepth = 0 } = options
+
+    if (node.nodeType === Node.TEXT_NODE) {
+        const textContent = normalizeTextContent(node.textContent || '')
+
+        if (!textContent.trim()) {
+            return []
+        }
+
+        return convertPlainTextToHtml(textContent)
+            .match(/<p>[\s\S]*?<\/p>/g) || []
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+        return []
+    }
+
+    const tagName = node.nodeName.toUpperCase()
+
+    if (SKIPPED_HTML_TAGS.includes(tagName)) {
+        return []
+    }
+
+    if (tagName === SPACE_BLOCK_TAG) {
+        return ['<space-block></space-block>']
+    }
+
+    if (tagName === 'P') {
+        return [`<p>${normalizeInlineChildren(node, { preserveLineBreaks: true }).trim() || '<br />'}</p>`]
+    }
+
+    if (tagName === 'H1' || HEADING_TAGS.includes(tagName)) {
+        return [`<h1>${normalizeInlineChildren(node, { preserveLineBreaks: true }).trim() || '<br />'}</h1>`]
+    }
+
+    if (tagName === 'PRE') {
+        const preformattedText = escapeHtml(normalizeTextContent(node.textContent || ''))
+        return [`<pre>${preformattedText.replace(/\n/g, '<br />') || '<br />'}</pre>`]
+    }
+
+    if (tagName === 'BR') {
+        return ['<p><br /></p>']
+    }
+
+    if (tagName === 'UL' || tagName === 'OL') {
+        return normalizeListElement(node, {
+            depth: listDepth,
+            ordered: tagName === 'OL',
+        })
+    }
+
+    if (tagName === 'TABLE') {
+        return normalizeTableElement(node)
+    }
+
+    if (BLOCK_WRAPPER_TAGS.includes(tagName) || tagName === 'LI') {
+        if (hasBlockLikeChildren(node)) {
+            return Array.from(node.childNodes).flatMap((childNode) =>
+                normalizeNodeToBlocks(childNode, { listDepth })
+            )
+        }
+
+        return [`<p>${normalizeInlineChildren(node, { preserveLineBreaks: true }).trim() || '<br />'}</p>`]
+    }
+
+    return [`<p>${normalizeInlineChildren(node, { preserveLineBreaks: true }).trim() || '<br />'}</p>`]
 }
 
 function createSpecialTokenNode(
@@ -282,43 +518,9 @@ function normalizeEditorHtml(content) {
     const container = document.createElement('div')
     container.innerHTML = content
 
-    const blocks = Array.from(container.childNodes).flatMap((node) => {
-        if (node.nodeType === Node.TEXT_NODE) {
-            const text = node.textContent || ''
-            if (!text.trim()) {
-                return []
-            }
-            return text ? [`<p>${escapeHtml(text)}</p>`] : []
-        }
-
-        if (node.nodeType !== Node.ELEMENT_NODE) {
-            return []
-        }
-
-        const tagName = node.nodeName.toLowerCase()
-
-        if (tagName === 'p') {
-            return [`<p>${node.innerHTML.trim() || '<br />'}</p>`]
-        }
-
-        if (tagName === 'h1' || tagName === 'pre') {
-            return [`<${tagName}>${node.innerHTML.trim() || '<br />'}</${tagName}>`]
-        }
-
-        if (tagName === 'space-block') {
-            return ['<space-block></space-block>']
-        }
-
-        if (tagName === 'br') {
-            return ['<p><br /></p>']
-        }
-
-        if (tagName === 'div') {
-            return [`<p>${node.innerHTML.trim() || '<br />'}</p>`]
-        }
-
-        return [`<p>${escapeHtml(node.textContent || '') || '<br />'}</p>`]
-    })
+    const blocks = Array.from(container.childNodes).flatMap((node) =>
+        normalizeNodeToBlocks(node)
+    )
 
     return blocks.join('') || '<p><br /></p>'
 }
@@ -798,6 +1000,37 @@ export function ContentPanel({
         onChangeContent(
             normalizeEditorHtml(serializeDecoratedHtml(editSurfaceRef.current.innerHTML))
         )
+    }
+
+    function handleEditSurfacePaste(event) {
+        const clipboardData = event.clipboardData
+
+        if (!clipboardData) {
+            return
+        }
+
+        const pastedHtml = clipboardData.getData('text/html')
+        const pastedText = clipboardData.getData('text/plain')
+        const clipboardContent = pastedHtml || pastedText
+
+        if (!clipboardContent) {
+            return
+        }
+
+        event.preventDefault()
+
+        const normalizedPasteHtml = normalizeEditorHtml(clipboardContent)
+        const pasteContainer = document.createElement('div')
+        pasteContainer.innerHTML = normalizedPasteHtml
+
+        const pasteBlocks = Array.from(pasteContainer.children)
+        const insertionHtml =
+            pasteBlocks.length === 1 && pasteBlocks[0].nodeName === 'P'
+                ? pasteBlocks[0].innerHTML || '<br />'
+                : normalizedPasteHtml
+
+        document.execCommand('insertHTML', false, insertionHtml)
+        syncEditSurfaceContent()
     }
 
     async function handleSpecialTokenClick(event) {
@@ -1645,6 +1878,7 @@ export function ContentPanel({
                                 className="content-edit-surface html-content-surface"
                                 contentEditable
                                 onClick={handleSpecialTokenClick}
+                                onPaste={handleEditSurfacePaste}
                                 onInput={syncEditSurfaceContent}
                                 onContextMenu={handleEditSurfaceContextMenu}
                                 onKeyDown={handleEditSurfaceKeyDown}
